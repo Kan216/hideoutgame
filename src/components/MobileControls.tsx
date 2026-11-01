@@ -10,7 +10,10 @@ interface MobileControlsProps {
   onJoystickMove: (x: number, y: number) => void;
   onTriggerAction: (action: ContextualActionPrompt) => void;
   onHoldObjectiveChange: (holding: boolean) => void;
+  onSendEmote?: (text: string) => void;
 }
+
+const QUICK_EMOTES = ['👋 Hey!', '👀 Spotted!', '🏃 Run!', '🆘 Help!', '🏆 GG', '🤫 Shh!'];
 
 export const MobileControls: React.FC<MobileControlsProps> = ({
   visible,
@@ -21,10 +24,12 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onJoystickMove,
   onTriggerAction,
   onHoldObjectiveChange,
+  onSendEmote,
 }) => {
   const baseRef = useRef<HTMLDivElement | null>(null);
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
+  const [showEmotes, setShowEmotes] = useState(false);
 
   if (!visible) return null;
 
@@ -69,6 +74,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   return (
     <div
       className="fixed inset-0 pointer-events-none z-30 flex items-end justify-between px-7 pb-7 sm:px-10 sm:pb-9"
+      style={{
+        paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(1.75rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(1.75rem, env(safe-area-inset-right, 0px))',
+      }}
       aria-label="Mobile touch controls"
     >
       {/* Left Side: Virtual Thumb Joystick */}
@@ -102,8 +112,45 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         />
       </div>
 
-      {/* Right Side: Contextual Role Action Buttons (Only shown when an action is currently available!) */}
-      <div className="pointer-events-auto flex flex-col items-end gap-3">
+      {/* Right Side: Quick Emotes Drawer & Contextual Role Action Buttons */}
+      <div className="pointer-events-auto flex flex-col items-end gap-2.5">
+        {/* Quick Emote Drawer */}
+        {showEmotes && onSendEmote && (
+          <div className="bg-[#090D16]/95 border-2 border-slate-700 rounded-2xl p-2 shadow-2xl grid grid-cols-3 gap-1.5 mb-1 max-w-[240px]">
+            {QUICK_EMOTES.map((em) => (
+              <button
+                key={em}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.vibrate?.(12);
+                  onSendEmote(em);
+                  setShowEmotes(false);
+                }}
+                className="px-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono font-bold text-white border border-slate-700 shadow"
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Emote Drawer Toggle Button */}
+        {onSendEmote && (
+          <button
+            type="button"
+            aria-label="Quick Callouts"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEmotes(!showEmotes);
+            }}
+            className="h-10 px-3 rounded-xl bg-[#090D16]/90 border border-slate-700 hover:bg-slate-800 text-xs font-mono font-bold text-amber-300 shadow flex items-center gap-1.5"
+          >
+            <span>💬</span>
+            <span className="text-[11px] font-sans">Callout</span>
+          </button>
+        )}
+
         {contextualActions.map((act) => {
           const isObj = act.action === 'objective';
           const isElim = act.action === 'eliminate';
@@ -117,6 +164,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 aria-label={act.label}
                 onPointerDown={(e) => {
                   e.stopPropagation();
+                  navigator.vibrate?.(20);
                   onHoldObjectiveChange(true);
                 }}
                 onPointerUp={(e) => {
@@ -126,7 +174,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 onPointerLeave={() => {
                   if (isHoldingObjective) onHoldObjectiveChange(false);
                 }}
-                onClick={() => onHoldObjectiveChange(!isHoldingObjective)}
+                onClick={() => {
+                  navigator.vibrate?.(20);
+                  onHoldObjectiveChange(!isHoldingObjective);
+                }}
                 className={`min-h-[56px] min-w-[168px] px-5 py-3 rounded-2xl font-display font-bold text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
                   isHoldingObjective
                     ? 'bg-emerald-500 text-slate-950 border-emerald-200'
@@ -146,6 +197,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               aria-label={act.label}
               onClick={(e) => {
                 e.stopPropagation();
+                navigator.vibrate?.(25);
                 onTriggerAction(act);
               }}
               className={`min-h-[56px] min-w-[164px] px-5 py-3 rounded-2xl font-display font-bold text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${

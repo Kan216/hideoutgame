@@ -1,0 +1,18 @@
+{
+  "name": "CITY HIDEOUT — Online Pixel-Art Hide & Seek",
+  "short_name": "City Hideout",
+  "description": "Multiplayer 2D pixel-art urban hide-and-seek with 76 hiding spots across 4 maps, authoritative matchmaking, and cross-platform PC/mobile controls.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090D16",
+  "theme_color": "#090D16",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

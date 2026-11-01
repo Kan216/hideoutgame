@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { PlayerRole } from '../game/rules';
 
 export interface EndOfRunStatsSnapshot {
@@ -104,6 +104,23 @@ export const PauseModal: React.FC<PauseModalProps> = ({
               className="w-full accent-amber-400"
             />
           </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <span className="text-xs font-medium text-slate-300">Display Mode</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                } else {
+                  document.exitFullscreen().catch(() => {});
+                }
+              }}
+              className="min-h-[44px] px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-sky-300 border border-slate-700 cursor-pointer"
+            >
+              ⛶ Toggle Fullscreen
+            </button>
+          </div>
         </div>
 
         {/* Action Buttons */}
@@ -151,6 +168,21 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const playerWon =
     (snapshot.localRole === 'hider' && snapshot.winner === 'hiders') ||
     (snapshot.localRole === 'seeker' && snapshot.winner === 'seekers');
+
+  const [copiedStats, setCopiedStats] = useState(false);
+
+  const handleCopyStats = () => {
+    const text = `🎮 CITY HIDEOUT Match Result:\n${
+      playerWon ? '🏆 VICTORY' : '💀 DEFEAT'
+    } as ${snapshot.localRole.toUpperCase()}!\n⏱️ Match Time: ${Math.round(
+      snapshot.elapsedSeconds
+    )}s | Beacon Stages: ${snapshot.stagesCompleted}/${snapshot.totalStages}\nPlay now: ${
+      typeof window !== 'undefined' ? window.location.origin : ''
+    }`;
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopiedStats(true);
+    setTimeout(() => setCopiedStats(false), 2000);
+  };
 
   return (
     <div
@@ -200,28 +232,35 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         </div>
 
         {/* Primary Action CTAs */}
-        <div className="mt-6 flex flex-col sm:flex-row gap-3">
+        <div className="mt-6 flex flex-col sm:flex-row gap-2.5">
           <button
             type="button"
             data-start="true"
             onClick={onPlayAgain}
-            className="flex-1 min-h-[48px] px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-sm transition-colors"
+            className="flex-1 min-h-[48px] px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-sm transition-colors cursor-pointer"
           >
             Play Again
           </button>
           <button
             type="button"
-            onClick={onOpenLobby}
-            className="min-h-[48px] px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-display font-bold text-sm transition-colors"
+            onClick={handleCopyStats}
+            className="min-h-[48px] px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-display font-bold text-sm border border-amber-500/40 transition-colors cursor-pointer"
           >
-            Lobby & Setup
+            {copiedStats ? 'Copied Stats!' : '📋 Share Stats'}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenLobby}
+            className="min-h-[48px] px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-display font-bold text-sm transition-colors cursor-pointer"
+          >
+            Lobby
           </button>
           <button
             type="button"
             onClick={onExitToTitle}
-            className="min-h-[48px] px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 font-display font-bold text-sm transition-colors"
+            className="min-h-[48px] px-3.5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 font-display font-bold text-sm transition-colors cursor-pointer"
           >
-            Main Menu
+            Menu
           </button>
         </div>
       </div>

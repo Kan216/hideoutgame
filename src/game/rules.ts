@@ -40,6 +40,7 @@ export interface PlayerState {
   lastInspectAt: number;
   connected: boolean;
   colorIndex: number;
+  activeEmote?: { text: string; expiresAt: number } | null;
 }
 
 export interface MatchConfig {
@@ -54,7 +55,7 @@ export interface MatchConfig {
   directEliminationRange: number; // Default 56 px
   inspectCooldownMs: number; // Default 650 ms
   survivalTimerEnabled: boolean;
-  survivalTimerSeconds: number; // Optional survival timer if enabled
+  survivalTimerSeconds: number; // Default 240s (4 minutes)
 }
 
 export interface MatchEventLog {
@@ -83,6 +84,13 @@ export interface MatchState {
   events: MatchEventLog[];
 }
 
+export function formatMatchTime(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   mapId: 'downtown_plaza',
   seekerCount: 1,
@@ -94,8 +102,8 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   objectiveStageDurationSeconds: 15,
   directEliminationRange: 58,
   inspectCooldownMs: 600,
-  survivalTimerEnabled: false,
-  survivalTimerSeconds: 180,
+  survivalTimerEnabled: true,
+  survivalTimerSeconds: 240,
 };
 
 const RESERVED_IDENTITIES = new Set([

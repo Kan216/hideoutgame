@@ -4,14 +4,16 @@
 
 ## Core Features
 - **Instant Play as Guest**: Zero registration, email, or password required. Automatically provisions a server-verified guest session token with customizable display name validation.
-- **Two Urban Pixel-Art Maps**:
-  - **Downtown Metro Plaza**: Compact city center with 18 interactive hiding places (dumpsters, newsstand kiosks, phone booths, drainage grates, hedges, and canal culverts).
-  - **Harbor Shipping District**: Large industrial port with 20 hiding places and 1- or 2-Seeker mode support.
+- **Four Diverse Pixel-Art Maps (76 Total Hiding Spots)**:
+  - **Downtown Metro Plaza & Interiors**: Compact urban center with 18 interactive hiding places (dumpsters, newsstand kiosks, phone booths, drainage grates, hedges, and canal culverts).
+  - **Harbor Shipping & Docklands**: Industrial seaport with 20 hiding places and 1- or 2-Seeker mode support.
+  - **Modern Executive Plaza**: Sleek glass-and-steel district with 18 hiding places.
+  - **Mystic Woods & Ancient Ruins**: Overgrown ruins with 20 nature and stone hiding spots.
 - **Authoritative Match Rules**:
   - **10-Second Hider Head Start**: Seekers are locked inside the Precinct Deploy Zone while Hiders scatter and hide.
-  - **1.5× Seeker Speed**: Hiders move at 100% (`160 px/s`); Seekers move at 150% (`240 px/s`).
-  - **Data-Driven Hiding**: Single-capacity hiding objects (`1 hider per object`).
-  - **Close-Range Catch & Hiding Inspection**: Seekers catch visible hiders in range or inspect hiding objects to eliminate hidden occupants.
+  - **1.2× Seeker Speed Ratio**: Hiders move at 100% (`160 px/s`); Seekers move at 120% (`192 px/s`).
+  - **Data-Driven Hiding & 15s Protection**: Single-capacity hiding objects (`1 hider per object`). Hiders are protected from direct elimination while hidden, up to a maximum duration of 15 seconds.
+  - **Close-Range Catch & Hiding Inspection**: Seekers eliminate hiders in the open or inspect hiding objects to force out and eliminate hidden occupants.
   - **3-Stage Escape Beacon Objective**: Hiders win by holding the City-Center Beacon for **3 stages × 15 uninterrupted seconds** (`45s` total). Interruption resets only the current stage.
 - **Adaptive Mobile Touch Controls**: Left virtual thumb joystick with configurable sensitivity + right-hand contextual action buttons that appear only when an interaction is valid.
 

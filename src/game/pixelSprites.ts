@@ -80,6 +80,76 @@ export function stepAndDrawParticles(ctx: CanvasRenderingContext2D, dt: number) 
 }
 
 /**
+ * Zero-GC Pre-Allocated Floating World Text Ring Buffer for Combat & Event Feedback
+ */
+export interface FloatingWorldText {
+  active: boolean;
+  text: string;
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  color: string;
+}
+
+const MAX_FLOATING_TEXTS = 16;
+const floatingTextPool: FloatingWorldText[] = Array.from({ length: MAX_FLOATING_TEXTS }, () => ({
+  active: false,
+  text: '',
+  x: 0,
+  y: 0,
+  life: 0,
+  maxLife: 1.2,
+  color: '#FCD34D',
+}));
+let floatingTextCursor = 0;
+
+export function spawnFloatingWorldText(
+  x: number,
+  y: number,
+  text: string,
+  color: string = '#FCD34D'
+) {
+  const t = floatingTextPool[floatingTextCursor];
+  floatingTextCursor = (floatingTextCursor + 1) % MAX_FLOATING_TEXTS;
+  t.active = true;
+  t.text = text;
+  t.x = x;
+  t.y = y - 12;
+  t.maxLife = 1.25;
+  t.life = 1.25;
+  t.color = color;
+}
+
+export function stepAndDrawFloatingTexts(ctx: CanvasRenderingContext2D, dt: number) {
+  ctx.save();
+  ctx.font = 'bold 11px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < MAX_FLOATING_TEXTS; i++) {
+    const t = floatingTextPool[i];
+    if (!t.active) continue;
+    t.life -= dt;
+    if (t.life <= 0) {
+      t.active = false;
+      continue;
+    }
+    t.y -= dt * 28; // float upward smoothly
+    const alpha = Math.min(1, t.life / 0.35);
+    ctx.globalAlpha = alpha;
+    // draw crisp dark drop shadow
+    ctx.fillStyle = '#090D16';
+    ctx.fillText(t.text, Math.round(t.x) + 1, Math.round(t.y) + 1);
+    ctx.fillText(t.text, Math.round(t.x) - 1, Math.round(t.y) + 1);
+    ctx.fillText(t.text, Math.round(t.x), Math.round(t.y) + 2);
+    // draw colored text
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, Math.round(t.x), Math.round(t.y));
+  }
+  ctx.restore();
+}
+
+/**
  * Asset Pack Sprite Sheet Cache (`brackeys`, `modern_interiors`, `mystic_woods`, `top_down_basic`)
  */
 type SpriteAssetKey =
@@ -1364,6 +1434,35 @@ export function drawPlayerSprite(
   ctx.fillStyle =
     player.role === 'seeker' ? '#FCA5A5' : isLocal ? '#6EE7B7' : '#E2E8F0';
   ctx.fillText(player.name, x, y - 23 + bobY);
+
+  // Overhead Animated Emote Bubble
+  if (player.activeEmote && Date.now() < player.activeEmote.expiresAt) {
+    const bubbleText = player.activeEmote.text;
+    ctx.font = 'bold 12px "JetBrains Mono", sans-serif';
+    const textWidth = ctx.measureText(bubbleText).width;
+    const bw = Math.max(34, textWidth + 14);
+    const bh = 22;
+    const bx = Math.round(x - bw / 2);
+    const by = Math.round(y - 50 + bobY);
+
+    ctx.save();
+    // Bubble border & background
+    ctx.fillStyle = '#090D16';
+    ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(bx, by, bw, bh);
+    // Bubble arrow / tail
+    ctx.fillStyle = '#090D16';
+    ctx.fillRect(x - 3, by + bh, 6, 4);
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(x - 2, by + bh, 4, 3);
+
+    ctx.fillStyle = '#0F172A';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(bubbleText, x, by + bh / 2 + 1);
+    ctx.restore();
+  }
 }
 
 /**

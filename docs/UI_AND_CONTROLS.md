@@ -4,7 +4,7 @@
 Full-viewport 2D pixel-art canvas (`#090D16`) with state mirrored to `document.body.dataset.state`:
 - `'title'`: Live pixel-art camera tour backdrop, custom inline `<svg>` CITY HIDEOUT emblem, **Play as Guest** (`data-start="true"`), **Multiplayer Room & Setup**, **Play as Seeker**, **How to Play**, and flat bottom keyboard hint bar.
 - `'playing'`: Unobstructed playfield (`> 85%` clear viewport) with 3 compact perimeter HUD clusters:
-  1. **Top-Left**: Active Role (`HIDER 100%` or `SEEKER 150%`), Room Code, and graphical Living Hider Pips (`X/Y`).
+  1. **Top-Left**: Active Role (`HIDER 100%` or `SEEKER 120%`), Room Code, and graphical Living Hider Pips (`X/Y`).
   2. **Top-Center**: 10s Head-Start Countdown or 3-Stage Escape Beacon Progress (`tabular-nums`) + latest match event ticker.
   3. **Top-Right**: Square `<svg>` utility buttons (`Mute [M]`, `Restart [R]`, `Pause [P]`).
 - `'paused'`: Focused Pause & Settings modal (`Resume`, `Restart`, `Leave Session`, Audio toggle, Mobile Touch Controls mode, Joystick Sensitivity slider `0.6x–1.6x`).

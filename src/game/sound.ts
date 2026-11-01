@@ -304,6 +304,60 @@ class SoundManager {
     osc.stop(ctx.currentTime + 0.4);
   }
 
+  private lastHeartbeatTime = 0;
+
+  public playHeartbeat(intensity: number) {
+    if (this.muted || typeof window === 'undefined' || this.isHeadless()) return;
+    const now = performance.now();
+    const clampedIntensity = Math.max(0, Math.min(1, intensity));
+    const interval = Math.max(340, 1000 - clampedIntensity * 600);
+    if (now - this.lastHeartbeatTime < interval) return;
+    this.lastHeartbeatTime = now;
+
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(56, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(36, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.24 * clampedIntensity, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.16);
+    } catch {
+      // ignore audio context glitches
+    }
+  }
+
+  public playEmoteBubble() {
+    this.playSample('tap', 0.35, 1.35);
+  }
+
+  public playCountdownTick(secondsLeft: number) {
+    if (this.muted || typeof window === 'undefined' || this.isHeadless()) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      const freq = secondsLeft <= 3 ? 880 : 540;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.09);
+    } catch {
+      // ignore audio context glitches
+    }
+  }
+
   public playMatchResult(victory: boolean) {
     if (victory) {
       this.playSample('power_up', 0.6, 1.0);

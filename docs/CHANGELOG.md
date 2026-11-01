@@ -1,5 +1,39 @@
 # Changelog — CITY HIDEOUT
 
+## [1.8.0] — 2026-11-01
+### Added
+- **Commercial Production Polish & Quality-of-Life**:
+  - **Match Round Timer & Countdown Audio (`src/App.tsx`, `src/game/rules.ts`, `src/game/sound.ts`)**: 4-minute survival countdown with `⏱️ MM:SS` display and procedural WebAudio countdown ticks (3, 2, 1, Release Gong!).
+  - **Real-Time Event & Elimination Toast Feed (`src/App.tsx`)**: Dynamic toast stack displaying eliminations, beacon stage advances, and hiding timeouts.
+  - **Living Spectator Mode (`src/App.tsx`)**: Eliminated players transition to a spectator banner with `[` / `]` keyboard and on-screen button cycling across living players.
+  - **Proximity Tension Vignette & Heartbeat SFX (`src/App.tsx`, `src/game/sound.ts`)**: Radial red vignette and adaptive acoustic heartbeat audio that accelerates as a Seeker closes in within 280px.
+  - **Zero-GC Floating World Combat Text (`src/game/pixelSprites.ts`, `src/App.tsx`)**: World-space floating text (`+1 STAGE COMPLETE!`, `🚪 HIDDEN`, `💨 OUT`, `⚠️ TIME OUT!`, `☠️ ELIMINATED!`) rendered without GC allocations.
+  - **Network Latency Telemetry (`server.ts`, `src/App.tsx`)**: Real-time ping calculation and status badge (`🟢 <60ms`, `🟡 <140ms`, `🔴 >140ms`).
+  - **Overhead Pixel-Art Speech Bubble Emotes & Tactical Callouts (`src/game/pixelSprites.ts`, `src/components/MobileControls.tsx`, `src/App.tsx`)**: 6 tactical callouts available via desktop keys 1–6 and mobile drawer.
+  - **1-Click Multiplayer Room Deep-Linking (`src/components/LobbyModal.tsx`, `src/App.tsx`)**: 1-click "📋 Invite Link" button copying `?room=CODE` URLs with auto-join upon loading.
+  - **Post-Match Shareable Scorecard (`src/components/GameModals.tsx`)**: "📋 Share Stats" button copying match result and stats to clipboard.
+  - **Display Mode Fullscreen Toggle (`src/components/GameModals.tsx`)**: Quick fullscreen toggle in pause menu.
+  - **Mobile Physical Haptics (`src/components/MobileControls.tsx`, `src/App.tsx`)**: Native vibration feedback (`navigator.vibrate`) on touch button presses, eliminations, and beacon progress.
+  - **PWA Web App Manifest & App Icon (`public/manifest.json`, `public/icon.svg`, `index.html`)**: Web app manifest and vector icon for home screen installation and standalone display.
+
+## [1.7.0] — 2026-11-01
+### Added
+- **Cross-Platform Mobile & PC Blueprint (`docs/CROSS_PLATFORM_MOBILE_PC.md`)**: Comprehensive specification covering dual keyboard/mouse and virtual touch controls, viewport handling, safe area insets for notches, PWA manifests, and native packaging (Capacitor & Tauri).
+- **Production-Level Server Hardening (`server.ts`)**:
+  - `/healthz` HTTP health and telemetry probe returning server uptime, active room count, and guest session count.
+  - Per-connection rate limiting (60 msgs/sec threshold) to block socket flooding and DoS attacks.
+  - Room lock on match start (`join_room` rejects join attempts if `lifecycle !== 'LOBBY'`).
+  - Max player room limit (`8` players per room).
+  - Server-side input clamping (`Math.max(-1, Math.min(1, input))`) preventing speed hacking.
+  - Stale room auto-cleanup garbage collector removing abandoned 0-client rooms older than 2 minutes.
+- **Mobile Safe Area & Viewport Enhancements (`index.html`, `src/index.css`, `MobileControls.tsx`)**:
+  - Added `viewport-fit=cover`, `mobile-web-app-capable`, and `theme-color` meta tags.
+  - Added `-webkit-touch-callout: none` and safe area insets to body and `MobileControls`.
+- **Expanded Automated Unit Test Suite (`src/game/rules.test.ts`)**: Added 3 new tests (input clamping/diagonal normalization, line-of-sight wall checks with inspection cooldowns, match lifecycle safety), bringing total tests from 7 to 10 (all green).
+### Fixed
+- **Documentation Speed Consistency**: Unified Seeker speed references across `README.md`, `docs/GDD.md`, and `docs/UI_AND_CONTROLS.md` to match authoritative `1.2x` (`192 px/s`).
+- **Vite Native ConfigLoader Warning**: Switched `__dirname` to `import.meta.dirname` in `vite.config.ts`.
+
 ## [1.6.0] — 2026-10-20
 ### Changed
 - **15-Second Max Hide Timer (`maxHideDurationSeconds: 15`)**: Reduced the maximum time a Hider can stay hidden inside an object from `30s` to `15s`, after which the Hider is automatically forced out into the open. Updated the live canvas countdown bar (`[HIDDEN · 15s]`) and HUD prompts accordingly.

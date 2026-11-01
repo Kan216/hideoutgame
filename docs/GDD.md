@@ -19,7 +19,7 @@
 
 ### Seeker
 - **Spawn**: North-West Precinct Deploy Zone (locked during the 10-second head start).
-- **Speed**: `150%` (`240 px/s` — `1.5×` Hider speed).
+- **Speed**: `120%` (`192 px/s` — `1.2×` Hider speed).
 - **Abilities**:
   - **Direct Elimination**: Catch visible, unhidden living hiders within `58 px` with clear line of sight (cannot eliminate through walls).
   - **Inspect Hiding Object**: Inspect eligible hiding places within `64 px` (`600ms` cooldown). If occupied, the hidden hider is immediately eliminated and occupancy is cleared.

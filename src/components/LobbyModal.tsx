@@ -55,6 +55,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
   const [nameError, setNameError] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const [selectedMap, setSelectedMap] = useState<MapId>(
     onlineRoomState?.config.mapId || 'downtown_plaza'
@@ -81,6 +82,14 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
     navigator.clipboard?.writeText(onlineRoomState.roomCode).catch(() => {});
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyInviteLink = () => {
+    if (!onlineRoomState) return;
+    const url = `${window.location.origin}${window.location.pathname}?room=${onlineRoomState.roomCode}`;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const isHost = onlineRoomState ? onlineRoomState.hostId === guestId : true;
@@ -242,18 +251,25 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                         {onlineRoomState.roomCode}
                       </span>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={handleCopyRoomCode}
-                        className="min-h-[44px] px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700"
+                        className="min-h-[44px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 cursor-pointer"
                       >
-                        {copiedCode ? 'Copied!' : 'Copy Code'}
+                        {copiedCode ? 'Copied Code!' : 'Copy Code'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCopyInviteLink}
+                        className="min-h-[44px] px-3.5 py-2 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-xs font-medium text-emerald-200 border border-emerald-700/60 cursor-pointer"
+                      >
+                        {copiedLink ? 'Link Copied!' : '📋 Invite Link'}
                       </button>
                       <button
                         type="button"
                         onClick={onLeaveOnlineRoom}
-                        className="min-h-[44px] px-3.5 py-2 rounded-lg bg-red-950/80 hover:bg-red-900 text-xs font-medium text-red-200 border border-red-800/60"
+                        className="min-h-[44px] px-3 py-2 rounded-lg bg-red-950/80 hover:bg-red-900 text-xs font-medium text-red-200 border border-red-800/60 cursor-pointer"
                       >
                         Leave
                       </button>

@@ -22,6 +22,8 @@ import {
   getAvailableContextualActions,
   generateGuestName,
   getCitySectorLabel,
+  formatMatchTime,
+  MatchEventLog,
 } from './game/rules';
 import {
   drawPixelMap,
@@ -29,6 +31,8 @@ import {
   drawCityMinimap,
   spawnPixelBurst,
   stepAndDrawParticles,
+  spawnFloatingWorldText,
+  stepAndDrawFloatingTexts,
 } from './game/pixelSprites';
 import { soundFX } from './game/sound';
 import { MobileControls } from './components/MobileControls';
@@ -42,6 +46,8 @@ import {
 
 type ShellScreenState = 'title' | 'playing' | 'paused' | 'gameover';
 
+export const QUICK_EMOTES = ['👋 Hey!', '👀 Spotted!', '🏃 Run!', '🆘 Help!', '🏆 GG', '🤫 Shh!'];
+
 interface HudSnapshot {
   role: PlayerRole;
   alive: boolean;
@@ -49,6 +55,7 @@ interface HudSnapshot {
   lifecycle: MatchState['lifecycle'];
   countdown: number;
   elapsedSeconds: number;
+  matchTimerRemaining: number;
   stagesCompleted: number;
   totalStages: number;
   stageProgress: number;
@@ -64,6 +71,11 @@ interface HudSnapshot {
   playerY: number;
   sectorLabel: string;
   contextualActions: ContextualActionPrompt[];
+  proximityDanger: number;
+  pingMs: number | null;
+  spectatingPlayerName: string | null;
+  spectatingRole: PlayerRole | null;
+  activeEvents: MatchEventLog[];
 }
 
 export default function App() {
@@ -87,6 +99,9 @@ export default function App() {
   const [showLobbyModal, setShowLobbyModal] = useState(false);
   const [showHowToModal, setShowHowToModal] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [serverWakeupNotice, setServerWakeupNotice] = useState(false);
+  const [pingMs, setPingMs] = useState<number | null>(null);
+  const [spectatedId, setSpectatedId] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [onlineRoomState, setOnlineRoomState] = useState<MatchState | null>(null);
   const [endOfRunSnapshot, setEndOfRunSnapshot] = useState<EndOfRunStatsSnapshot | null>(null);
@@ -109,6 +124,7 @@ export default function App() {
     lifecycle: 'LOBBY',
     countdown: 10,
     elapsedSeconds: 0,
+    matchTimerRemaining: 240,
     stagesCompleted: 0,
     totalStages: 3,
     stageProgress: 0,
@@ -124,6 +140,11 @@ export default function App() {
     playerY: 515,
     sectorLabel: 'CENTER PLAZA',
     contextualActions: [],
+    proximityDanger: 0,
+    pingMs: null,
+    spectatingPlayerName: null,
+    spectatingRole: null,
+    activeEvents: [],
   });
 
   // Refs for Decoupled 60 FPS Canvas Simulation
@@ -141,6 +162,9 @@ export default function App() {
   const distWalkedMapRef = useRef<Record<string, number>>({});
   const lastEventIdRef = useRef<string>('');
   const cameraShakeRef = useRef<number>(0);
+  const pingMsRef = useRef<number | null>(null);
+  const spectatedIdRef = useRef<string | null>(null);
+  const lastCountdownSecRef = useRef<number>(-1);
 
   useEffect(() => {
     guestIdRef.current = guestId;
@@ -156,6 +180,41 @@ export default function App() {
     selectedSkinRef.current = selectedSkin;
     localStorage.setItem('ch_guest_skin', selectedSkin);
   }, [selectedSkin]);
+
+  useEffect(() => {
+    pingMsRef.current = pingMs;
+  }, [pingMs]);
+
+  useEffect(() => {
+    spectatedIdRef.current = spectatedId;
+  }, [spectatedId]);
+
+  const sendEmote = useCallback((text: string) => {
+    const myId = guestIdRef.current;
+    if (isOnlineMatchRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'send_emote', text }));
+    } else {
+      const p = matchStateRef.current.players[myId];
+      if (p) {
+        p.activeEmote = { text, expiresAt: Date.now() + 3000 };
+      }
+    }
+    soundFX.playEmoteBubble();
+  }, []);
+
+  const cycleSpectatorTarget = useCallback((direction: 1 | -1) => {
+    const st = matchStateRef.current;
+    const living = Object.values(st.players).filter((p) => p.alive);
+    if (living.length === 0) return;
+    const currentIdx = living.findIndex((p) => p.id === spectatedIdRef.current);
+    const nextIdx =
+      currentIdx === -1
+        ? 0
+        : (currentIdx + direction + living.length) % living.length;
+    const nextPlayer = living[nextIdx];
+    spectatedIdRef.current = nextPlayer.id;
+    setSpectatedId(nextPlayer.id);
+  }, []);
 
   useEffect(() => {
     document.body.dataset.state = shellState;
@@ -179,11 +238,11 @@ export default function App() {
           name: a.name,
           role: a.role,
           skinId: a.skin,
-          isBot: true,
+          isBot: false,
           alive: true,
           x: a.x,
           y: a.y,
-          vx: 10,
+          vx: 0,
           vy: 0,
           facing: 'down',
           hiddenInSpotId: null,
@@ -222,8 +281,16 @@ export default function App() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      const wakeupTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+        if (!unmounted && ws.readyState !== WebSocket.OPEN) {
+          setServerWakeupNotice(true);
+        }
+      }, 2500);
+
       ws.onopen = () => {
         if (unmounted) return;
+        clearTimeout(wakeupTimer);
+        setServerWakeupNotice(false);
         setWsConnected(true);
         ws.send(
           JSON.stringify({
@@ -237,7 +304,12 @@ export default function App() {
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
-          if (data.type === 'guest_authenticated') {
+          if (data.type === 'pong') {
+            const rtt = Math.max(1, Date.now() - Number(data.t));
+            setPingMs(rtt);
+            pingMsRef.current = rtt;
+            return;
+          } else if (data.type === 'guest_authenticated') {
             const oldId = guestIdRef.current;
             const newId = data.playerId;
             if (
@@ -268,6 +340,34 @@ export default function App() {
           } else if (data.type === 'room_state') {
             const incoming: MatchState = data.state;
             setOnlineRoomState(incoming);
+
+            if (incoming.events && incoming.events.length > 0 && incoming.events[0].id !== lastEventIdRef.current) {
+              const latest = incoming.events[0];
+              lastEventIdRef.current = latest.id;
+              if (latest.type === 'elimination') {
+                soundFX.playElimination();
+                cameraShakeRef.current = 0.45;
+                spawnPixelBurst(latest.x || 0, latest.y || 0, 24, '#EF4444', 150);
+                spawnFloatingWorldText(latest.x || 0, latest.y || 0, '☠️ ELIMINATED!', '#EF4444');
+                navigator.vibrate?.([60, 40, 60]);
+              } else if (latest.type === 'objective_stage') {
+                soundFX.playObjectiveStageComplete(incoming.objectiveCompletedStages);
+                spawnPixelBurst(latest.x || 0, latest.y || 0, 28, '#10B981', 160);
+                spawnFloatingWorldText(latest.x || 0, latest.y || 0, `⚡ STAGE ${incoming.objectiveCompletedStages} COMPLETE!`, '#10B981');
+                navigator.vibrate?.([40, 40, 100]);
+              } else if (latest.type === 'hide') {
+                soundFX.playForcedExitWarning();
+                spawnPixelBurst(latest.x || 0, latest.y || 0, 16, '#F59E0B', 100);
+                spawnFloatingWorldText(latest.x || 0, latest.y || 0, '⚠️ TIME OUT!', '#F59E0B');
+              } else if (latest.type === 'info' && latest.message.includes('SEEKER IS RELEASED')) {
+                soundFX.playSeekerReleased();
+                const m = MAPS[incoming.config.mapId];
+                if (m) {
+                  spawnFloatingWorldText(m.seekerSpawns[0]?.x ?? m.width / 2, m.seekerSpawns[0]?.y ?? m.height / 2, '🚨 SEEKERS UNLEASHED!', '#EF4444');
+                }
+              }
+            }
+
             if (
               incoming.lifecycle === 'HIDER_HEAD_START' ||
               incoming.lifecycle === 'SEEKER_RELEASED' ||
@@ -298,8 +398,16 @@ export default function App() {
     };
 
     connectWs();
+
+    const pingInterval = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping', t: Date.now() }));
+      }
+    }, 2000);
+
     return () => {
       unmounted = true;
+      clearInterval(pingInterval);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
@@ -418,11 +526,24 @@ export default function App() {
     []
   );
 
-  // Support ?autostart=1 query parameter
+  // Support ?autostart=1 and ?room=CODE invite query parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
       startLocalGuestMatch('downtown_plaza', 1, 4, 'hider');
+      return;
+    }
+    const roomParam = params.get('room');
+    if (roomParam && roomParam.trim().length >= 4) {
+      const targetRoom = roomParam.trim().toUpperCase();
+      setShowLobbyModal(true);
+      const pollWs = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          clearInterval(pollWs);
+          wsRef.current.send(JSON.stringify({ type: 'join_room', roomCode: targetRoom }));
+        }
+      }, 200);
+      return () => clearInterval(pollWs);
     }
   }, [startLocalGuestMatch]);
 
@@ -461,23 +582,35 @@ export default function App() {
       const res = attemptEnterHidingSpot(st, myId, chosen.targetId);
       if (res.ok) {
         soundFX.playHide(true);
+        navigator.vibrate?.(20);
         const p = st.players[myId];
-        if (p) spawnPixelBurst(p.x, p.y, 10, '#10B981', 75);
+        if (p) {
+          spawnPixelBurst(p.x, p.y, 10, '#10B981', 75);
+          spawnFloatingWorldText(p.x, p.y, '🚪 HIDDEN', '#34D399');
+        }
       }
     } else if (chosen.action === 'exit_hide') {
       const res = attemptExitHidingSpot(st, myId);
       if (res.ok) {
         soundFX.playHide(false);
+        navigator.vibrate?.(15);
         const p = st.players[myId];
-        if (p) spawnPixelBurst(p.x, p.y, 8, '#38BDF8', 65);
+        if (p) {
+          spawnPixelBurst(p.x, p.y, 8, '#38BDF8', 65);
+          spawnFloatingWorldText(p.x, p.y, '💨 OUT', '#94A3B8');
+        }
       }
     } else if (chosen.action === 'eliminate') {
       const res = attemptDirectElimination(st, myId, chosen.targetId);
       if (res.ok) {
         soundFX.playElimination();
         cameraShakeRef.current = 0.35;
+        navigator.vibrate?.([60, 40, 60]);
         const p = st.players[myId];
-        if (p) spawnPixelBurst(p.x, p.y, 20, '#EF4444', 130);
+        if (p) {
+          spawnPixelBurst(p.x, p.y, 20, '#EF4444', 130);
+          spawnFloatingWorldText(p.x, p.y, '☠️ ELIMINATED!', '#EF4444');
+        }
       }
     } else if (chosen.action === 'inspect' && chosen.targetId) {
       const res = attemptInspectHidingSpot(st, myId, chosen.targetId, Date.now());
@@ -485,16 +618,25 @@ export default function App() {
         if (res.foundPlayerId) {
           soundFX.playElimination();
           cameraShakeRef.current = 0.4;
+          navigator.vibrate?.([60, 40, 60]);
           const p = st.players[myId];
-          if (p) spawnPixelBurst(p.x, p.y, 22, '#EF4444', 140);
+          if (p) {
+            spawnPixelBurst(p.x, p.y, 22, '#EF4444', 140);
+            spawnFloatingWorldText(p.x, p.y, '🎯 FOUND!', '#EF4444');
+          }
         } else {
           soundFX.playInspectEmpty();
+          navigator.vibrate?.(15);
           const p = st.players[myId];
-          if (p) spawnPixelBurst(p.x, p.y, 8, '#F59E0B', 65);
+          if (p) {
+            spawnPixelBurst(p.x, p.y, 8, '#F59E0B', 65);
+            spawnFloatingWorldText(p.x, p.y, 'EMPTY', '#94A3B8');
+          }
         }
       }
     } else if (chosen.action === 'objective') {
       const p = st.players[myId];
+      navigator.vibrate?.(15);
       setObjectiveInteraction(st, myId, !p?.interactingWithObjective);
     }
   }, []);
@@ -559,6 +701,25 @@ export default function App() {
 
       if (shellStateRef.current !== 'playing') return;
 
+      const num = parseInt(key, 10);
+      if (num >= 1 && num <= 6) {
+        e.preventDefault();
+        sendEmote(QUICK_EMOTES[num - 1]);
+        return;
+      }
+
+      const localPlayer = matchStateRef.current.players[guestIdRef.current];
+      if (localPlayer && !localPlayer.alive) {
+        if (key === '[' || key === 'arrowleft') {
+          cycleSpectatorTarget(-1);
+          return;
+        }
+        if (key === ']' || key === 'arrowright') {
+          cycleSpectatorTarget(1);
+          return;
+        }
+      }
+
       if (!e.repeat && (key === 'e' || e.key === ' ')) {
         e.preventDefault();
         executeContextualAction();
@@ -599,6 +760,8 @@ export default function App() {
     startLocalGuestMatch,
     executeContextualAction,
     setHoldingObjectiveState,
+    sendEmote,
+    cycleSpectatorTarget,
   ]);
 
   // Mount Isolated 60 FPS Canvas2D Simulation & Renderer Once
@@ -704,7 +867,18 @@ export default function App() {
           if (wasHidden && !nowHidden) {
             soundFX.playForcedExitWarning();
             const p = st.players[myId];
-            if (p) spawnPixelBurst(p.x, p.y, 14, '#F59E0B', 95);
+            if (p) {
+              spawnPixelBurst(p.x, p.y, 14, '#F59E0B', 95);
+              spawnFloatingWorldText(p.x, p.y, '⚠️ TIME OUT!', '#F59E0B');
+            }
+          }
+
+          if (st.lifecycle === 'HIDER_HEAD_START') {
+            const currentSec = Math.ceil(st.countdownRemaining);
+            if (currentSec !== lastCountdownSecRef.current && currentSec > 0) {
+              lastCountdownSecRef.current = currentSec;
+              soundFX.playCountdownTick(currentSec);
+            }
           }
 
           if (st.objectiveActiveHiderIds.includes(myId) && st.objectiveCurrentStageProgress > 0) {
@@ -715,13 +889,43 @@ export default function App() {
 
           if (prevLifecycle === 'HIDER_HEAD_START' && st.lifecycle === 'MATCH_ACTIVE') {
             soundFX.playSeekerReleased();
+            spawnFloatingWorldText(
+              map.seekerSpawns[0]?.x ?? map.width / 2,
+              map.seekerSpawns[0]?.y ?? map.height / 2,
+              '🚨 SEEKERS UNLEASHED!',
+              '#EF4444'
+            );
           }
           if (st.objectiveCompletedStages > prevStages) {
             soundFX.playObjectiveStageComplete(st.objectiveCompletedStages);
             spawnPixelBurst(map.objective.x, map.objective.y, 24, '#10B981', 140);
+            spawnFloatingWorldText(
+              map.objective.x,
+              map.objective.y,
+              `⚡ STAGE ${st.objectiveCompletedStages} COMPLETE!`,
+              '#10B981'
+            );
+            navigator.vibrate?.([40, 40, 100]);
           }
           if (st.lifecycle === 'MATCH_COMPLETED') {
             triggerGameOverFromState(st);
+          }
+        }
+
+        // Calculate proximity tension for living hiders
+        let currentTension = 0;
+        const localPlayer = st.players[myId] || Object.values(st.players)[0];
+        if (localPlayer && localPlayer.alive && localPlayer.role === 'hider' && st.lifecycle === 'MATCH_ACTIVE') {
+          let minSeekerDist = Infinity;
+          for (const p of Object.values(st.players)) {
+            if (p.role === 'seeker' && p.alive) {
+              const d = Math.hypot(p.x - localPlayer.x, p.y - localPlayer.y);
+              if (d < minSeekerDist) minSeekerDist = d;
+            }
+          }
+          if (minSeekerDist < 280) {
+            currentTension = Math.max(0, 1 - minSeekerDist / 280);
+            soundFX.playHeartbeat(currentTension);
           }
         }
 
@@ -734,6 +938,7 @@ export default function App() {
           const livingHiders = hiders.filter((p) => p.alive);
           const seekers = allPlayers.filter((p) => p.role === 'seeker');
           const actions = getAvailableContextualActions(st, myId);
+          const specTarget = spectatedIdRef.current ? st.players[spectatedIdRef.current] : null;
 
           setHud({
             role: localP?.role || 'hider',
@@ -742,6 +947,7 @@ export default function App() {
             lifecycle: st.lifecycle,
             countdown: st.countdownRemaining,
             elapsedSeconds: st.elapsedMatchSeconds,
+            matchTimerRemaining: Math.max(0, (st.config.survivalTimerSeconds ?? 240) - st.elapsedMatchSeconds),
             stagesCompleted: st.objectiveCompletedStages,
             totalStages: st.config.objectiveTotalStages,
             stageProgress: st.objectiveCurrentStageProgress,
@@ -762,6 +968,11 @@ export default function App() {
               map.height
             ),
             contextualActions: actions,
+            proximityDanger: currentTension,
+            pingMs: pingMsRef.current,
+            spectatingPlayerName: specTarget ? specTarget.name : null,
+            spectatingRole: specTarget ? specTarget.role : null,
+            activeEvents: st.events.slice(0, 4),
           });
         }
       } else if (shellStateRef.current === 'title') {
@@ -785,10 +996,21 @@ export default function App() {
         camX = map.width / 2 + Math.cos(timeSec * 0.2) * 180;
         camY = map.height / 2 + Math.sin(timeSec * 0.16) * 140;
       } else {
-        const localP = st.players[myId] || Object.values(st.players)[0];
-        if (localP) {
-          camX = localP.x;
-          camY = localP.y;
+        let targetP = st.players[myId];
+        if (targetP && !targetP.alive) {
+          const living = Object.values(st.players).filter((p) => p.alive);
+          if (living.length > 0) {
+            let specP = spectatedIdRef.current ? st.players[spectatedIdRef.current] : null;
+            if (!specP || !specP.alive) {
+              specP = living[0];
+              spectatedIdRef.current = specP.id;
+            }
+            targetP = specP;
+          }
+        }
+        if (targetP) {
+          camX = targetP.x;
+          camY = targetP.y;
         }
       }
 
@@ -819,6 +1041,7 @@ export default function App() {
       }
 
       stepAndDrawParticles(ctx, dt);
+      stepAndDrawFloatingTexts(ctx, dt);
       ctx.restore();
 
       // 3. Render Transparent Corner Minimap when in gameplay
@@ -1070,11 +1293,18 @@ export default function App() {
         <div className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-3 sm:p-5">
           {/* Top Perimeter Row */}
           <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3">
-            {/* Cluster 1 (Top-Left): Role Emblem + Living Hiders Pips */}
+            {/* Cluster 1 (Top-Left): Role Emblem + Living Hiders Pips + Latency */}
             <div className="order-1 pointer-events-auto bg-[#090D16]/90 border-2 border-slate-700 rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 shadow-lg flex items-center gap-2 sm:gap-3.5">
               <div>
-                <div className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                  ROLE · {hud.isOnline ? `ROOM ${hud.roomCode}` : 'GUEST'}
+                <div className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <span>ROLE · {hud.isOnline ? `ROOM ${hud.roomCode}` : 'GUEST'}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[9px] font-mono text-slate-300">
+                    {hud.isOnline
+                      ? hud.pingMs !== null
+                        ? `${hud.pingMs < 60 ? '🟢' : hud.pingMs < 140 ? '🟡' : '🔴'} ${hud.pingMs}ms`
+                        : '⚪ ...'
+                      : '⚡ LOCAL'}
+                  </span>
                 </div>
                 <div
                   data-testid="hud-role"
@@ -1123,7 +1353,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Cluster 2 (Top-Center): Authoritative 10s Countdown & 3-Stage Escape Beacon */}
+            {/* Cluster 2 (Top-Center): Authoritative 10s Countdown, Round Timer, & 3-Stage Escape Beacon */}
             <div className="order-3 sm:order-2 w-full sm:w-auto pointer-events-auto bg-[#090D16]/90 border-2 border-slate-700 rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 shadow-lg text-center sm:min-w-[290px]">
               {hud.lifecycle === 'HIDER_HEAD_START' ? (
                 <div className="flex sm:block items-center justify-between gap-2">
@@ -1139,12 +1369,15 @@ export default function App() {
                 </div>
               ) : (
                 <div>
-                  <div className="flex items-center justify-between text-[10px] font-mono uppercase text-slate-300 mb-1">
-                    <span>ESCAPE BEACON STAGE {hud.stagesCompleted}/{hud.totalStages}</span>
-                    <span className="text-amber-400 tabular-nums">
+                  <div className="flex items-center justify-between text-[10px] font-mono uppercase text-slate-300 mb-1 gap-2">
+                    <span>BEACON {hud.stagesCompleted}/{hud.totalStages}</span>
+                    <span className="text-amber-300 font-bold tabular-nums">
+                      ⏱️ {formatMatchTime(hud.matchTimerRemaining)}
+                    </span>
+                    <span className="text-slate-400 tabular-nums">
                       {hud.stageProgress > 0
                         ? `${Math.ceil(hud.stageDuration - hud.stageProgress)}s left`
-                        : '15s / stage'}
+                        : '15s/stage'}
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
@@ -1322,10 +1555,103 @@ export default function App() {
               ))}
             </div>
           )}
+
+          {/* Spectator Mode Top Banner (When local player is eliminated) */}
+          {!hud.alive && (
+            <div className="pointer-events-auto mx-auto mb-2 flex items-center gap-2.5 sm:gap-4 bg-red-950/90 border-2 border-red-500/80 rounded-2xl px-4 py-2 sm:px-6 sm:py-2.5 shadow-2xl backdrop-blur-md">
+              <span className="text-[11px] sm:text-xs font-mono font-bold text-red-300 animate-pulse">
+                ☠️ ELIMINATED
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-xs sm:text-sm font-display font-bold text-white">
+                SPECTATING: {hud.spectatingPlayerName || 'Living Teammate'}
+              </span>
+              <div className="flex items-center gap-1.5 ml-1">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => cycleSpectatorTarget(-1)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono font-bold text-slate-200 border border-slate-700 cursor-pointer"
+                >
+                  ◀ [
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => cycleSpectatorTarget(1)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono font-bold text-slate-200 border border-slate-700 cursor-pointer"
+                >
+                  ] ▶
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Adaptive Mobile Touch Controls (Joystick + Contextual Action Buttons) */}
+      {/* Real-time Elimination & Event Feed Toast Stack */}
+      {shellState === 'playing' && hud.activeEvents.length > 0 && (
+        <div className="fixed top-24 left-3 sm:left-5 z-25 pointer-events-none flex flex-col gap-1.5 max-w-[260px] sm:max-w-[340px]">
+          {hud.activeEvents.map((evt) => {
+            const isElim = evt.type === 'elimination';
+            const isObj = evt.type === 'objective_stage';
+            const isHide = evt.type === 'hide';
+            const isVic = evt.type === 'victory';
+            return (
+              <div
+                key={evt.id}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono border shadow-md backdrop-blur-md flex items-center gap-2 transition-all duration-300 ${
+                  isElim
+                    ? 'bg-red-950/85 border-red-500/60 text-red-200'
+                    : isObj
+                    ? 'bg-emerald-950/85 border-emerald-500/60 text-emerald-200'
+                    : isHide
+                    ? 'bg-amber-950/85 border-amber-500/60 text-amber-200'
+                    : isVic
+                    ? 'bg-purple-950/85 border-purple-500/60 text-purple-200'
+                    : 'bg-slate-900/80 border-slate-700/60 text-slate-300'
+                }`}
+              >
+                <span>{isElim ? '🔴' : isObj ? '⚡' : isHide ? '🚪' : isVic ? '🏆' : 'ℹ️'}</span>
+                <span className="truncate">{evt.message}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Suspense Proximity Vignette when Seeker is near living Hider */}
+      {shellState === 'playing' && hud.proximityDanger > 0.05 && (
+        <div
+          className="fixed inset-0 pointer-events-none z-15 transition-opacity duration-300"
+          style={{
+            opacity: Math.min(0.85, hud.proximityDanger * 0.95),
+            background:
+              'radial-gradient(circle at center, transparent 42%, rgba(220, 38, 38, 0.4) 80%, rgba(153, 27, 27, 0.75) 100%)',
+          }}
+        />
+      )}
+
+      {/* Quick Tactical Callouts Dock (Desktop Keyboard 1-6) */}
+      {!showMobileControls && shellState === 'playing' && (
+        <div className="fixed bottom-3 right-4 sm:right-6 z-25 pointer-events-auto flex items-center gap-1.5 bg-[#090D16]/90 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-xl backdrop-blur-md">
+          <span className="text-[10px] font-mono text-slate-400 mr-1 hidden sm:inline">CALLOUTS:</span>
+          {QUICK_EMOTES.map((em, idx) => (
+            <button
+              key={em}
+              type="button"
+              tabIndex={-1}
+              onClick={() => sendEmote(em)}
+              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono text-slate-200 border border-slate-700/60 cursor-pointer"
+            >
+              <span className="text-amber-400 font-bold mr-1">[{idx + 1}]</span>
+              {em.split(' ')[0]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Adaptive Mobile Touch Controls (Joystick + Contextual Action Buttons + Quick Callouts) */}
       <MobileControls
         visible={showMobileControls}
         role={hud.role}
@@ -1337,6 +1663,7 @@ export default function App() {
         }}
         onTriggerAction={(act) => executeContextualAction(act)}
         onHoldObjectiveChange={(holding) => setHoldingObjectiveState(holding)}
+        onSendEmote={sendEmote}
       />
 
       {/* Online Multiplayer & Match Setup Lobby Modal */}

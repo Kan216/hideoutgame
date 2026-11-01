@@ -286,3 +286,82 @@ test('Minimap projection tests: Maps world coordinates accurately to relative mi
   assert.equal(getCitySectorLabel(136, 140, map.width, map.height), 'NW SECTOR');
 });
 
+test('Input clamping & Diagonal normalization: Prevents speed hacking beyond base speed', () => {
+  const state = seedTwoPlayers();
+  state.lifecycle = 'MATCH_ACTIVE';
+  const map = MAPS[state.config.mapId];
+  const hider = state.players['p2'];
+
+  // Test 1: Excessive input magnitude (e.g. 100, 100) must be normalized to speed (160 px/s)
+  const dt = 0.05;
+  const hackedMove = resolvePlayerMovement(hider, 100, 100, dt, state, map);
+  const actualDist = Math.hypot(hackedMove.vx, hackedMove.vy);
+  const expectedMaxSpeed = getPlayerSpeed('hider', state.config);
+  assert.ok(Math.abs(actualDist - expectedMaxSpeed) < 0.01, `Hacked speed was ${actualDist}, expected ${expectedMaxSpeed}`);
+
+  // Test 2: Diagonal movement magnitude should match cardinal movement speed exactly
+  const cardinalMove = resolvePlayerMovement(hider, 1, 0, dt, state, map);
+  const diagonalMove = resolvePlayerMovement(hider, 1, 1, dt, state, map);
+  const cardinalSpeed = Math.hypot(cardinalMove.vx, cardinalMove.vy);
+  const diagonalSpeed = Math.hypot(diagonalMove.vx, diagonalMove.vy);
+  assert.ok(Math.abs(cardinalSpeed - diagonalSpeed) < 0.01, `Diagonal speed ${diagonalSpeed} != cardinal speed ${cardinalSpeed}`);
+});
+
+test('Line of sight & Inspection cooldown: Seeker cannot eliminate through walls and inspect has strict cooldown', () => {
+  const state = seedTwoPlayers();
+  state.lifecycle = 'MATCH_ACTIVE';
+  const map = MAPS[state.config.mapId];
+
+  // Pick a wall from the map to place between Seeker and Hider
+  const wall = map.walls[0];
+  const seeker = state.players['p1'];
+  const hider = state.players['p2'];
+
+  // Position seeker on one side of wall, hider on opposite side within elimination distance
+  seeker.x = wall.x - 10;
+  seeker.y = wall.y + wall.height / 2;
+  hider.x = wall.x + wall.width + 10;
+  hider.y = wall.y + wall.height / 2;
+
+  // Attempt elimination across wall
+  const crossWallElim = attemptDirectElimination(state, 'p1', 'p2');
+  assert.equal(crossWallElim.ok, false, 'Seeker should NOT be able to eliminate hider through a wall');
+  assert.equal(hider.alive, true, 'Hider should remain alive when protected by wall');
+
+  // Test inspection cooldown
+  const spot = map.hidingSpots[0];
+  seeker.x = spot.x + spot.width / 2;
+  seeker.y = spot.y + spot.height / 2 + 10;
+  const now = Date.now();
+  const firstInspect = attemptInspectHidingSpot(state, 'p1', spot.id, now);
+  // May succeed or report empty
+  assert.ok(firstInspect.reason !== 'Inspection on cooldown.');
+
+  // Immediate second inspect within cooldown (<600ms) MUST fail with cooldown reason
+  const rapidInspect = attemptInspectHidingSpot(state, 'p1', spot.id, now + 100);
+  assert.equal(rapidInspect.ok, false);
+  assert.equal(rapidInspect.reason, 'Inspection on cooldown.');
+
+  // Inspect after cooldown (>600ms) should be permitted
+  const validInspect = attemptInspectHidingSpot(state, 'p1', spot.id, now + 700);
+  assert.ok(validInspect.reason !== 'Inspection on cooldown.');
+});
+
+test('Match lifecycle safety: Rejects movement and actions in LOBBY or MATCH_COMPLETED state', () => {
+  const state = seedTwoPlayers();
+  const map = MAPS[state.config.mapId];
+  const hider = state.players['p2'];
+
+  // In LOBBY state, movement returns zero velocity
+  state.lifecycle = 'LOBBY';
+  const lobbyMove = resolvePlayerMovement(hider, 1, 0, 0.05, state, map);
+  assert.equal(lobbyMove.vx, 0);
+  assert.equal(lobbyMove.vy, 0);
+
+  // In MATCH_COMPLETED state, movement returns zero velocity
+  state.lifecycle = 'MATCH_COMPLETED';
+  const completedMove = resolvePlayerMovement(hider, 1, 0, 0.05, state, map);
+  assert.equal(completedMove.vx, 0);
+  assert.equal(completedMove.vy, 0);
+});
+

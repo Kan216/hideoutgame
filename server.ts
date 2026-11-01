@@ -210,15 +210,60 @@ async function startServer() {
     });
   });
 
+  app.get('/healthz', (_req, res) => {
+    res.json({
+      status: 'ok',
+      uptime: process.uptime(),
+      roomsCount: rooms.size,
+      sessionsCount: guestSessionsByToken.size,
+      timestamp: Date.now(),
+    });
+  });
+
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', (ws) => {
     let boundSession: GuestSession | null = null;
+    let messageCountInWindow = 0;
+    let currentSecondWindow = Math.floor(Date.now() / 1000);
 
     ws.on('message', (raw) => {
       try {
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (nowSec !== currentSecondWindow) {
+          currentSecondWindow = nowSec;
+          messageCountInWindow = 0;
+        }
+        messageCountInWindow++;
+        if (messageCountInWindow > 60) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded (max 60 msgs/sec).' }));
+          ws.close(1008, 'Rate limit exceeded');
+          return;
+        }
+
         const msg = JSON.parse(raw.toString());
+
+        if (msg.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong', t: msg.t }));
+          return;
+        }
+
+        if (msg.type === 'send_emote') {
+          const text = String(msg.text || '').slice(0, 16).trim();
+          if (text && boundSession && boundSession.currentRoomCode) {
+            const room = rooms.get(boundSession.currentRoomCode);
+            if (room && room.state.players[boundSession.playerId]) {
+              const p = room.state.players[boundSession.playerId];
+              p.activeEmote = {
+                text,
+                expiresAt: Date.now() + 3000,
+              };
+              broadcastRoomState(room);
+            }
+          }
+          return;
+        }
 
         if (msg.type === 'auth_guest') {
           boundSession = createOrResumeGuestSession(msg.token, msg.displayName);
@@ -304,6 +349,14 @@ async function startServer() {
             ws.send(JSON.stringify({ type: 'error', message: `Room "${code}" not found.` }));
             return;
           }
+          if (room.state.lifecycle !== 'LOBBY') {
+            ws.send(JSON.stringify({ type: 'error', message: `Room "${code}" is already in an active match.` }));
+            return;
+          }
+          if (Object.keys(room.state.players).length >= 8) {
+            ws.send(JSON.stringify({ type: 'error', message: `Room "${code}" is full (maximum 8 players).` }));
+            return;
+          }
           addPlayerToRoom(room, boundSession, ws);
           broadcastRoomState(room);
           return;
@@ -379,10 +432,11 @@ async function startServer() {
         }
 
         if (msg.type === 'move_input') {
-          room.inputs.set(boundSession.playerId, {
-            ix: Number(msg.ix) || 0,
-            iy: Number(msg.iy) || 0,
-          });
+          const rawIx = Number(msg.ix) || 0;
+          const rawIy = Number(msg.iy) || 0;
+          const ix = Math.max(-1, Math.min(1, rawIx));
+          const iy = Math.max(-1, Math.min(1, rawIy));
+          room.inputs.set(boundSession.playerId, { ix, iy });
           return;
         }
 
@@ -442,6 +496,9 @@ async function startServer() {
       ) {
         const map = MAPS[state.config.mapId];
         for (const player of Object.values(state.players)) {
+          if (player.activeEmote && now > player.activeEmote.expiresAt) {
+            player.activeEmote = null;
+          }
           if (player.isBot) {
             stepBotAI(state, player, dt, now);
           } else {
@@ -459,6 +516,16 @@ async function startServer() {
       }
     }
   }, TICK_MS);
+
+  // Stale room auto-cleanup (every 60s, deletes rooms with 0 connected clients older than 2 minutes)
+  setInterval(() => {
+    const now = Date.now();
+    for (const [code, room] of rooms.entries()) {
+      if (room.clients.size === 0 && now - room.lastUpdatedAt > 120_000) {
+        rooms.delete(code);
+      }
+    }
+  }, 60_000);
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
