@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CHARACTER_SKINS, CharacterSkinId, MAPS } from '../game/maps';
+import { CHARACTER_SKINS, CharacterSkinId, MapId, MAPS } from '../game/maps';
 import { MatchState, PlayerRole, validateGuestDisplayName } from '../game/rules';
+import { soundFX } from '../game/sound';
 
 interface LobbyModalProps {
   guestId: string;
@@ -12,20 +13,20 @@ interface LobbyModalProps {
   onSelectSkin: (skin: CharacterSkinId) => void;
   onUpdateGuestName: (newName: string) => void;
   onCreateOnlineRoom: (
-    mapId: 'downtown_plaza' | 'harbor_district',
+    mapId: MapId,
     seekerCount: 1 | 2,
     botCount: number
   ) => void;
   onJoinOnlineRoom: (roomCode: string) => void;
   onLeaveOnlineRoom: () => void;
   onConfigureOnlineRoom: (
-    mapId: 'downtown_plaza' | 'harbor_district',
+    mapId: MapId,
     seekerCount: 1 | 2,
     botCount: number
   ) => void;
   onStartOnlineMatch: (preferredRole?: PlayerRole) => void;
   onStartLocalMatch: (
-    mapId: 'downtown_plaza' | 'harbor_district',
+    mapId: MapId,
     seekerCount: 1 | 2,
     botCount: number,
     preferredRole: PlayerRole
@@ -55,7 +56,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
 
-  const [selectedMap, setSelectedMap] = useState<'downtown_plaza' | 'harbor_district'>(
+  const [selectedMap, setSelectedMap] = useState<MapId>(
     onlineRoomState?.config.mapId || 'downtown_plaza'
   );
   const [selectedSeekers, setSelectedSeekers] = useState<1 | 2>(
@@ -150,16 +151,19 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
 
           <div>
             <span className="block text-xs font-medium text-slate-400 mb-1.5">
-              Select Character Sprite (PixelSpaces NPCs · Toxic/Void Slimes · Dark Armored Knight)
+              Select Character Sprite (Modern Interiors · Mystic Woods · Brackeys Knights &amp; Slimes)
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               {CHARACTER_SKINS.map((sk) => {
                 const active = selectedSkin === sk.id;
                 return (
                   <button
                     key={sk.id}
                     type="button"
-                    onClick={() => onSelectSkin(sk.id)}
+                    onClick={() => {
+                      soundFX.playUiTap();
+                      onSelectSkin(sk.id);
+                    }}
                     className={`p-2.5 rounded-xl border text-left transition-colors ${
                       active
                         ? 'bg-slate-800 border-emerald-400 text-white'
@@ -312,10 +316,17 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
               {/* Map Selection */}
               <div>
                 <span className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Select Urban / Fantasy Map
+                  Select Playable Map (4 Maps · 76 Total Hiding Objects)
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {(['downtown_plaza', 'harbor_district'] as const).map((mId) => {
+                  {(
+                    [
+                      'downtown_plaza',
+                      'harbor_district',
+                      'modern_mall',
+                      'mystic_sanctuary',
+                    ] as const
+                  ).map((mId) => {
                     const m = MAPS[mId];
                     const active =
                       (onlineRoomState ? onlineRoomState.config.mapId : selectedMap) === mId;
@@ -325,6 +336,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                         type="button"
                         disabled={!isHost}
                         onClick={() => {
+                          soundFX.playUiTap();
                           setSelectedMap(mId);
                           if (onlineRoomState && isHost) {
                             onConfigureOnlineRoom(mId, selectedSeekers, botCount);
@@ -336,9 +348,10 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                             : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        <div className="font-display font-bold text-sm">{m.name}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {m.hidingSpots.length} Hiding Objects · Rec: {m.recommendedSeekers} Seeker
+                        <div className="font-display font-bold text-xs sm:text-sm truncate">{m.name}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {m.hidingSpots.length} Spots · Rec: {m.recommendedSeekers}{' '}
+                          {m.recommendedSeekers === 1 ? 'Seeker' : 'Seekers'}
                         </div>
                       </button>
                     );

@@ -1,5 +1,5 @@
 import { MAPS } from './maps.ts';
-import type { MapConfig, HidingSpotConfig, WallRect, CharacterSkinId } from './maps.ts';
+import type { MapConfig, MapId, HidingSpotConfig, WallRect, CharacterSkinId } from './maps.ts';
 
 export type MatchLifecycleState =
   | 'LOBBY'
@@ -43,12 +43,12 @@ export interface PlayerState {
 }
 
 export interface MatchConfig {
-  mapId: 'downtown_plaza' | 'harbor_district';
+  mapId: MapId;
   seekerCount: 1 | 2;
   hiderBaseSpeed: number; // Default 160 px/s (100%)
-  seekerSpeedMultiplier: number; // Default 1.1 (110%)
+  seekerSpeedMultiplier: number; // Default 1.2 (120%)
   headStartSeconds: number; // Default 10s
-  maxHideDurationSeconds: number; // Default 30s max hide time in a spot
+  maxHideDurationSeconds: number; // Default 15s max hide time in a spot
   objectiveTotalStages: number; // Default 3
   objectiveStageDurationSeconds: number; // Default 15s per stage
   directEliminationRange: number; // Default 56 px
@@ -87,9 +87,9 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   mapId: 'downtown_plaza',
   seekerCount: 1,
   hiderBaseSpeed: 160,
-  seekerSpeedMultiplier: 1.1,
+  seekerSpeedMultiplier: 1.2,
   headStartSeconds: 10,
-  maxHideDurationSeconds: 30,
+  maxHideDurationSeconds: 15,
   objectiveTotalStages: 3,
   objectiveStageDurationSeconds: 15,
   directEliminationRange: 58,
@@ -262,6 +262,45 @@ export function findNearestCollisionFreePoint(
   }
 
   return { x: clampedX, y: clampedY };
+}
+
+export function worldToMinimapCoords(
+  worldX: number,
+  worldY: number,
+  mapWidth: number,
+  mapHeight: number,
+  minimapWidth: number,
+  minimapHeight: number
+): { x: number; y: number; normX: number; normY: number } {
+  const safeW = Math.max(1, mapWidth);
+  const safeH = Math.max(1, mapHeight);
+  const normX = Math.max(0, Math.min(1, worldX / safeW));
+  const normY = Math.max(0, Math.min(1, worldY / safeH));
+  return {
+    x: Math.round(normX * minimapWidth),
+    y: Math.round(normY * minimapHeight),
+    normX,
+    normY,
+  };
+}
+
+export function getCitySectorLabel(
+  worldX: number,
+  worldY: number,
+  mapWidth: number,
+  mapHeight: number
+): string {
+  const nx = worldX / Math.max(1, mapWidth);
+  const ny = worldY / Math.max(1, mapHeight);
+  if (nx >= 0.35 && nx <= 0.65 && ny >= 0.35 && ny <= 0.65) {
+    return 'CENTER PLAZA';
+  }
+  const v = ny < 0.38 ? 'N' : ny > 0.62 ? 'S' : 'MID';
+  const h = nx < 0.38 ? 'W' : nx > 0.62 ? 'E' : 'CENTER';
+  if (v === 'MID' && h === 'CENTER') return 'CENTER PLAZA';
+  if (v === 'MID') return `${h} AVENUE`;
+  if (h === 'CENTER') return `${v} BOULEVARD`;
+  return `${v}${h} SECTOR`;
 }
 
 export function resolvePlayerMovement(
@@ -442,12 +481,13 @@ export function startAuthoritativeMatch(
     if (p.isBot) {
       if (isSeeker) {
         p.botPolicy = seekerIdx % 2 === 0 ? 'patrol_seeker' : 'hunter_seeker';
-        p.skinId = seekerIdx % 2 === 0 ? 'dark_knight' : 'void_slime';
+        p.skinId = seekerIdx % 2 === 0 ? 'dark_knight' : 'skeleton_stalker';
       } else {
         p.botPolicy = hiderIdx % 2 === 0 ? 'stealth_hider' : 'runner_hider';
         const hiderSkins: CharacterSkinId[] = [
           'male_scout',
           'female_runner',
+          'mystic_ranger',
           'toxic_slime',
           'void_slime',
         ];
@@ -546,7 +586,7 @@ export function attemptEnterHidingSpot(
   player.preHideX = player.x;
   player.preHideY = player.y;
   player.hiddenInSpotId = spot.id;
-  player.hideTimerRemaining = state.config.maxHideDurationSeconds ?? 30;
+  player.hideTimerRemaining = state.config.maxHideDurationSeconds ?? 15;
   player.interactingWithObjective = false;
   player.vx = 0;
   player.vy = 0;
@@ -706,7 +746,7 @@ export function attemptInspectHidingSpot(
       ok: false,
       foundPlayerId: null,
       spotLabel: spot.label,
-      reason: 'Hiders cannot be killed while hidden! Wait for their 30s hide timer to expire.',
+      reason: 'Hiders cannot be killed while hidden! Wait for their 15s hide timer to expire.',
     };
   }
 
@@ -847,8 +887,8 @@ export function stepAuthoritativeMatch(state: MatchState, dt: number): void {
     state.elapsedMatchSeconds += clampedDt;
   }
 
-  // Enforce 30-second max hiding duration for hidden hiders & tick spot cooldowns
-  const maxHideSecs = state.config.maxHideDurationSeconds ?? 30;
+  // Enforce 15-second max hiding duration for hidden hiders & tick spot cooldowns
+  const maxHideSecs = state.config.maxHideDurationSeconds ?? 15;
   for (const player of Object.values(state.players)) {
     if (player.spotCooldownRemaining && player.spotCooldownRemaining > 0) {
       player.spotCooldownRemaining = Math.max(0, player.spotCooldownRemaining - clampedDt);
@@ -964,15 +1004,14 @@ export function getAvailableContextualActions(
   if (player.role === 'hider') {
     if (player.hiddenInSpotId) {
       const spot = map.hidingSpots.find((s) => s.id === player.hiddenInSpotId);
-      const remSec = Math.ceil(
-        player.hideTimerRemaining ?? state.config.maxHideDurationSeconds ?? 30
-      );
+      const maxHide = state.config.maxHideDurationSeconds ?? 15;
+      const remSec = Math.ceil(player.hideTimerRemaining ?? maxHide);
       actions.push({
         action: 'exit_hide',
         label: `Exit Hiding (${remSec}s left)`,
         sublabel: spot
-          ? `${spot.label} · Auto-exits after 30s`
-          : 'Safe while hidden · Auto-exits after 30s',
+          ? `${spot.label} · Auto-exits after ${maxHide}s`
+          : `Safe while hidden · Auto-exits after ${maxHide}s`,
         targetId: player.hiddenInSpotId,
       });
       return actions;
@@ -1006,7 +1045,7 @@ export function getAvailableContextualActions(
       actions.push({
         action: 'hide',
         label: `Hide in ${nearestSpot.label}`,
-        sublabel: `Safe from Killer for up to ${state.config.maxHideDurationSeconds ?? 30}s`,
+        sublabel: `Safe from Killer for up to ${state.config.maxHideDurationSeconds ?? 15}s`,
         targetId: nearestSpot.id,
       });
     }

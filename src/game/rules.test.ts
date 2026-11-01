@@ -15,6 +15,8 @@ import {
   stepAuthoritativeMatch,
   isPositionWallFree,
   findNearestCollisionFreePoint,
+  worldToMinimapCoords,
+  getCitySectorLabel,
 } from './rules.ts';
 import { MAPS } from './maps.ts';
 
@@ -64,10 +66,10 @@ function seedTwoPlayers() {
   return state;
 }
 
-test('Movement tests: Seeker moves at 1.1x Hider speed and respects walls and head-start lock', () => {
+test('Movement tests: Seeker moves at 1.2x Hider speed and respects walls and head-start lock', () => {
   const hiderSpeed = getPlayerSpeed('hider', DEFAULT_MATCH_CONFIG);
   const seekerSpeed = getPlayerSpeed('seeker', DEFAULT_MATCH_CONFIG);
-  assert.equal(seekerSpeed, hiderSpeed * 1.1);
+  assert.equal(seekerSpeed, hiderSpeed * 1.2);
 
   const state = seedTwoPlayers();
   const map = MAPS[state.config.mapId];
@@ -120,7 +122,7 @@ test('Hiding tests: Single-capacity enforcement, movement lock while hidden, and
   assert.equal(state.hidingOccupancy[spot.id], null);
 });
 
-test('Hiding protection & 30s Max Hide Timer: Killer cannot kill hidden hider, and hider automatically comes out after 30s', () => {
+test('Hiding protection & 15s Max Hide Timer: Killer cannot kill hidden hider, and hider automatically comes out after 15s', () => {
   const state = seedTwoPlayers();
   const map = MAPS[state.config.mapId];
   const spot = map.hidingSpots[0];
@@ -137,12 +139,12 @@ test('Hiding protection & 30s Max Hide Timer: Killer cannot kill hidden hider, a
   }
   assert.equal(state.lifecycle, 'MATCH_ACTIVE');
 
-  // Hider enters hiding spot -> hideTimerRemaining starts at 30s
+  // Hider enters hiding spot -> hideTimerRemaining starts at 15s
   state.players['p2'].x = spot.x + spot.width / 2;
   state.players['p2'].y = spot.y + spot.height / 2 + 20;
   assert.equal(attemptEnterHidingSpot(state, 'p2', spot.id).ok, true);
   assert.equal(state.players['p2'].hiddenInSpotId, spot.id);
-  assert.equal(state.players['p2'].hideTimerRemaining, 30);
+  assert.equal(state.players['p2'].hideTimerRemaining, 15);
 
   // Killer cannot kill hider while hidden (neither direct elimination nor inspection)
   state.players['p1'].x = spot.x + spot.width / 2;
@@ -154,13 +156,13 @@ test('Hiding protection & 30s Max Hide Timer: Killer cannot kill hidden hider, a
   assert.equal(state.players['p2'].alive, true);
   assert.equal(state.players['p2'].hiddenInSpotId, spot.id);
 
-  // Advance 29 seconds -> Hider is still hidden with ~1s left
-  for (let i = 0; i < 290; i++) {
+  // Advance 14 seconds -> Hider is still hidden with ~1s left
+  for (let i = 0; i < 140; i++) {
     stepAuthoritativeMatch(state, 0.1);
   }
   assert.equal(state.players['p2'].hiddenInSpotId, spot.id);
 
-  // Advance past 30 seconds -> Hider is automatically forced out of hiding!
+  // Advance past 15 seconds -> Hider is automatically forced out of hiding!
   for (let i = 0; i < 15; i++) {
     stepAuthoritativeMatch(state, 0.1);
   }
@@ -218,12 +220,25 @@ test('Guest identity validation: Rejects reserved system identities and accepts 
   assert.equal(validateGuestDisplayName('PixelRunner42').valid, true);
 });
 
-test('Exhaustive Hiding Spot Exit Movement test: All 38 hiding spots across both maps allow free movement after exiting', () => {
-  for (const mapId of ['downtown_plaza', 'harbor_district'] as const) {
+test('Exhaustive Hiding Spot Exit Movement test: All 76 hiding spots across all 4 maps allow free movement after exiting', () => {
+  for (const mapId of [
+    'downtown_plaza',
+    'harbor_district',
+    'modern_mall',
+    'mystic_sanctuary',
+  ] as const) {
     const state = seedTwoPlayers();
     state.config.mapId = mapId;
     const map = MAPS[mapId];
     const hider = state.players['p2'];
+
+    for (const spawn of [...map.hiderSpawns, ...map.seekerSpawns]) {
+      assert.equal(
+        isPositionWallFree(spawn.x, spawn.y, 13, map),
+        true,
+        `Spawn point (${spawn.x}, ${spawn.y}) overlaps a wall on ${mapId}`
+      );
+    }
 
     for (const spot of map.hidingSpots) {
       const centerX = spot.x + spot.width / 2;
@@ -261,3 +276,13 @@ test('Exhaustive Hiding Spot Exit Movement test: All 38 hiding spots across both
     }
   }
 });
+
+test('Minimap projection tests: Maps world coordinates accurately to relative minimap coordinates and sector labels', () => {
+  const map = MAPS['downtown_plaza'];
+  const center = worldToMinimapCoords(map.width / 2, map.height / 2, map.width, map.height, 168, 118);
+  assert.equal(center.x, 84);
+  assert.equal(center.y, 59);
+  assert.equal(getCitySectorLabel(map.width / 2, map.height / 2, map.width, map.height), 'CENTER PLAZA');
+  assert.equal(getCitySectorLabel(136, 140, map.width, map.height), 'NW SECTOR');
+});
+

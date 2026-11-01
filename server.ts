@@ -273,8 +273,12 @@ async function startServer() {
 
         if (msg.type === 'create_room') {
           const code = generateRoomCode();
+          const requestedMapId =
+            msg.mapId && msg.mapId in MAPS
+              ? (msg.mapId as MatchConfig['mapId'])
+              : 'downtown_plaza';
           const config: Partial<MatchConfig> = {
-            mapId: msg.mapId === 'harbor_district' ? 'harbor_district' : 'downtown_plaza',
+            mapId: requestedMapId,
             seekerCount: msg.seekerCount === 2 ? 2 : 1,
           };
           const state = createInitialMatchState(code, boundSession.playerId, config);
@@ -331,8 +335,8 @@ async function startServer() {
 
         if (msg.type === 'configure_room') {
           if (state.hostId !== boundSession.playerId) return;
-          if (msg.mapId === 'downtown_plaza' || msg.mapId === 'harbor_district') {
-            state.config.mapId = msg.mapId;
+          if (msg.mapId && msg.mapId in MAPS) {
+            state.config.mapId = msg.mapId as MatchConfig['mapId'];
           }
           if (msg.seekerCount === 1 || msg.seekerCount === 2) {
             state.config.seekerCount = msg.seekerCount;

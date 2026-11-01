@@ -258,10 +258,10 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
         <div className="mt-5 space-y-4 text-sm text-slate-300 leading-relaxed">
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
             <h3 className="font-display font-bold text-emerald-400 text-base">
-              1. HIDER TEAM RULES (100% Speed · 10s Head Start · 30s Max Hide Time)
+              1. HIDER TEAM RULES (100% Speed · 10s Head Start · 15s Max Hide Time)
             </h3>
             <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Spawn in the City Center and use the <strong>10-second countdown</strong> while the Seeker is locked in the Precinct zone. Approach any of the <strong>18–20 hiding objects</strong> and press <span className="font-mono text-amber-300">E</span> (or tap <strong>HIDE</strong>) to conceal yourself. While hidden inside an object, <strong>the Killer cannot kill you</strong>—but you can only stay hidden for a <strong>maximum of 30 seconds</strong> before you automatically come out!
+              Spawn in the City Center and use the <strong>10-second countdown</strong> while the Seeker is locked in the Precinct zone. Approach any of the <strong>18–20 hiding objects</strong> and press <span className="font-mono text-amber-300">E</span> (or tap <strong>HIDE</strong>) to conceal yourself. While hidden inside an object, <strong>the Killer cannot kill you</strong>—but you can only stay hidden for a <strong>maximum of 15 seconds</strong> before you automatically come out!
             </p>
           </div>
 
@@ -276,10 +276,10 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
             <h3 className="font-display font-bold text-red-400 text-base">
-              3. SEEKER TEAM RULES (110% Speed · Open-Street Catch)
+              3. SEEKER TEAM RULES (120% Speed · Open-Street Catch)
             </h3>
             <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Released after the 10-second countdown at <strong>1.1× movement speed</strong>. Hidden hiders are protected while inside an object, so hunt hiders moving between cover, guard the City-Center Beacon, or wait for their <strong>30-second hide timer</strong> to force them out into the open (<span className="font-mono text-amber-300">E / Space</span> to Eliminate).
+              Released after the 10-second countdown at <strong>1.2× movement speed</strong>. Hidden hiders are protected while inside an object, so hunt hiders moving between cover, guard the City-Center Beacon, or wait for their <strong>15-second hide timer</strong> to force them out into the open (<span className="font-mono text-amber-300">E / Space</span> to Eliminate).
             </p>
           </div>
 

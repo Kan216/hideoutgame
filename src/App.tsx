@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { CHARACTER_SKINS, CharacterSkinId, MAPS } from './game/maps';
+import { CHARACTER_SKINS, CharacterSkinId, MapId, MAPS } from './game/maps';
 import {
   MatchState,
   PlayerRole,
@@ -21,10 +21,12 @@ import {
   stepBotAI,
   getAvailableContextualActions,
   generateGuestName,
+  getCitySectorLabel,
 } from './game/rules';
 import {
   drawPixelMap,
   drawPlayerSprite,
+  drawCityMinimap,
   spawnPixelBurst,
   stepAndDrawParticles,
 } from './game/pixelSprites';
@@ -58,6 +60,9 @@ interface HudSnapshot {
   roomCode: string;
   isOnline: boolean;
   latestEvent: string;
+  playerX: number;
+  playerY: number;
+  sectorLabel: string;
   contextualActions: ContextualActionPrompt[];
 }
 
@@ -75,6 +80,7 @@ export default function App() {
   const [selectedSkin, setSelectedSkin] = useState<CharacterSkinId>(() => {
     return (localStorage.getItem('ch_guest_skin') as CharacterSkinId) || 'male_scout';
   });
+  const [selectedTitleMap, setSelectedTitleMap] = useState<MapId>('downtown_plaza');
 
   // 2. Game Shell State Machine mirrored to document.body.dataset.state
   const [shellState, setShellState] = useState<ShellScreenState>('title');
@@ -87,6 +93,7 @@ export default function App() {
 
   // 3. Mobile & Audio Preferences
   const [muted, setMuted] = useState(false);
+  const [bgmEnabled, setBgmEnabled] = useState(false);
   const [touchMode, setTouchMode] = useState<'auto' | 'on' | 'off'>('auto');
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [joystickSensitivity, setJoystickSensitivity] = useState<number>(() => {
@@ -113,11 +120,15 @@ export default function App() {
     roomCode: 'LOCAL',
     isOnline: false,
     latestEvent: 'Find a hiding place or complete 3 City-Center Beacon stages!',
+    playerX: 745,
+    playerY: 515,
+    sectorLabel: 'CENTER PLAZA',
     contextualActions: [],
   });
 
   // Refs for Decoupled 60 FPS Canvas Simulation
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const shellStateRef = useRef<ShellScreenState>('title');
   const isOnlineMatchRef = useRef<boolean>(false);
@@ -326,11 +337,12 @@ export default function App() {
   // Start a Local Play-As-Guest Match Immediately
   const startLocalGuestMatch = useCallback(
     (
-      mapId: 'downtown_plaza' | 'harbor_district' = 'downtown_plaza',
+      mapId: MapId = 'downtown_plaza',
       seekerCount: 1 | 2 = 1,
       botCount: number = 4,
       preferredRole: PlayerRole = 'hider'
     ) => {
+      soundFX.initPreload();
       isOnlineMatchRef.current = false;
       const myId = guestIdRef.current;
       const st = createInitialMatchState('LOCAL', myId, {
@@ -344,7 +356,9 @@ export default function App() {
         name: guestNameRef.current,
         role: preferredRole,
         skinId:
-          preferredRole === 'seeker' && selectedSkinRef.current !== 'void_slime'
+          preferredRole === 'seeker' &&
+          selectedSkinRef.current !== 'void_slime' &&
+          selectedSkinRef.current !== 'skeleton_stalker'
             ? 'dark_knight'
             : selectedSkinRef.current,
         isBot: false,
@@ -683,7 +697,21 @@ export default function App() {
             }
           }
 
+          const wasHidden = st.players[myId]?.hiddenInSpotId !== null;
           stepAuthoritativeMatch(st, dt);
+          const nowHidden = st.players[myId]?.hiddenInSpotId !== null;
+
+          if (wasHidden && !nowHidden) {
+            soundFX.playForcedExitWarning();
+            const p = st.players[myId];
+            if (p) spawnPixelBurst(p.x, p.y, 14, '#F59E0B', 95);
+          }
+
+          if (st.objectiveActiveHiderIds.includes(myId) && st.objectiveCurrentStageProgress > 0) {
+            soundFX.playBeaconProgressTick(
+              st.objectiveCurrentStageProgress / st.config.objectiveStageDurationSeconds
+            );
+          }
 
           if (prevLifecycle === 'HIDER_HEAD_START' && st.lifecycle === 'MATCH_ACTIVE') {
             soundFX.playSeekerReleased();
@@ -725,6 +753,14 @@ export default function App() {
             roomCode: st.roomCode,
             isOnline: isOnlineMatchRef.current,
             latestEvent: st.events[0]?.message || 'Explore the city and stay alert.',
+            playerX: Math.round(localP?.x ?? map.width / 2),
+            playerY: Math.round(localP?.y ?? map.height / 2),
+            sectorLabel: getCitySectorLabel(
+              localP?.x ?? map.width / 2,
+              localP?.y ?? map.height / 2,
+              map.width,
+              map.height
+            ),
             contextualActions: actions,
           });
         }
@@ -784,6 +820,25 @@ export default function App() {
 
       stepAndDrawParticles(ctx, dt);
       ctx.restore();
+
+      // 3. Render Transparent Corner Minimap when in gameplay
+      const miniCanvas = minimapCanvasRef.current;
+      if (miniCanvas && shellStateRef.current !== 'title') {
+        const mCtx = miniCanvas.getContext('2d');
+        if (mCtx) {
+          drawCityMinimap(
+            mCtx,
+            miniCanvas.width,
+            miniCanvas.height,
+            map,
+            st,
+            myId,
+            timeSec,
+            canvas.width,
+            canvas.height
+          );
+        }
+      }
     };
 
     rafId = requestAnimationFrame(loop);
@@ -811,29 +866,49 @@ export default function App() {
           ===================================================================== */}
       {shellState === 'title' && (
         <div className="fixed inset-0 z-20 flex flex-col justify-between p-6 sm:p-10 bg-gradient-to-t from-[#070A12]/90 via-[#070A12]/45 to-[#070A12]/75">
-          {/* Top Bar: Guest Identity Readout */}
-          <div className="flex items-center justify-between">
+          {/* Top Bar: Guest Identity Readout + Audio & Rules */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-mono text-slate-300">
               GUEST ID: <span className="text-amber-300 font-bold">{guestName}</span> · SKIN:{' '}
               <span className="text-emerald-300 font-bold">
                 {CHARACTER_SKINS.find((s) => s.id === selectedSkin)?.name}
               </span>{' '}
-              · <span>{wsConnected ? 'ONLINE SERVER READY' : 'LOCAL MODE'}</span>
+              · MAP: <span className="text-sky-300 font-bold">{MAPS[selectedTitleMap].name}</span> ·{' '}
+              <span>{wsConnected ? 'ONLINE SERVER READY' : 'LOCAL MODE'}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowHowToModal(true)}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700 font-display font-bold text-xs transition-colors"
-            >
-              How to Play &amp; Rules
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = soundFX.toggleBgm();
+                  setBgmEnabled(next);
+                }}
+                className={`min-h-[40px] px-3.5 py-1.5 rounded-xl border font-mono font-bold text-xs transition-colors cursor-pointer ${
+                  bgmEnabled
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                {bgmEnabled ? 'BGM: ON' : 'BGM: OFF'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFX.playUiTap();
+                  setShowHowToModal(true);
+                }}
+                className="min-h-[40px] px-4 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700 font-display font-bold text-xs transition-colors cursor-pointer"
+              >
+                How to Play &amp; Rules
+              </button>
+            </div>
           </div>
 
-          {/* Center Focal Anchor: Bespoke Inline <svg> Title Emblem + Character Bar + 3 Menu Actions */}
-          <div className="my-auto max-w-xl">
+          {/* Center Focal Anchor: Bespoke Inline <svg> Title Emblem + Map & Character Selectors + 3 Menu Actions */}
+          <div className="my-auto max-w-2xl">
             <svg
-              viewBox="0 0 520 130"
-              className="w-full max-w-[460px] h-auto drop-shadow-[0_6px_0_#090D16]"
+              viewBox="0 0 640 130"
+              className="w-full max-w-[520px] h-auto drop-shadow-[0_6px_0_#090D16]"
               role="img"
               aria-label="CITY HIDEOUT Pixel-Art Emblem"
             >
@@ -858,46 +933,100 @@ export default function App() {
                 x="108"
                 y="92"
                 fill="#F59E0B"
-                fontFamily="JetBrains Mono, monospace"
-                fontWeight="700"
-                fontSize="15"
-                letterSpacing="3"
+                fontFamily="Outfit, sans-serif"
+                fontWeight="800"
+                fontSize="14"
+                letterSpacing="2.2"
               >
-                PIXELSPACES &amp; ELDORIA EDITION
+                4 MAPS · 76 HIDING SPOTS · ARCADE SFX
               </text>
             </svg>
 
-            <p className="mt-3 text-sm sm:text-base text-slate-200 max-w-lg leading-relaxed">
-              Explore cutaway furnished apartments, autumn parks, canal bridges, and railway docks. Hide inside wardrobes, elevators, refrigerators, curtains, or fountains during the 10-second head start!
+            <p className="mt-2.5 text-sm sm:text-base text-slate-200 max-w-xl leading-relaxed">
+              Explore cutaway furnished apartments, harbor railway docks, modern executive suites, and mystic forest ruins. Hide up to 15s per object or complete 3 Beacon stages to escape!
             </p>
 
-            {/* Quick Character Archetype Selector Strip */}
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              {CHARACTER_SKINS.map((sk) => {
-                const isSelected = selectedSkin === sk.id;
-                return (
-                  <button
-                    key={sk.id}
-                    type="button"
-                    onClick={() => setSelectedSkin(sk.id)}
-                    className={`min-h-[40px] px-3 py-1.5 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
-                        : 'bg-[#090D16]/85 border-slate-700 text-slate-300 hover:border-slate-500'
-                    }`}
-                  >
-                    {sk.name}
-                  </button>
-                );
-              })}
+            {/* 4-Map Quick Selector Strip (Live Background Preview) */}
+            <div className="mt-3.5">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-amber-300/90 mb-1.5">
+                SELECT MAP ARENA ({MAPS[selectedTitleMap].subtitle})
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    'downtown_plaza',
+                    'harbor_district',
+                    'modern_mall',
+                    'mystic_sanctuary',
+                  ] as const
+                ).map((mId) => {
+                  const m = MAPS[mId];
+                  const isSelected = selectedTitleMap === mId;
+                  return (
+                    <button
+                      key={mId}
+                      type="button"
+                      onClick={() => {
+                        soundFX.playUiTap();
+                        setSelectedTitleMap(mId);
+                        matchStateRef.current.config.mapId = mId;
+                      }}
+                      className={`min-h-[38px] px-3 py-1.5 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                          : 'bg-[#090D16]/85 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      {m.name} ({m.hidingSpots.length})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Quick Character Archetype Selector Strip (7 Playable Skins) */}
+            <div className="mt-3">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-emerald-300/90 mb-1.5">
+                SELECT CHARACTER SPRITE
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {CHARACTER_SKINS.map((sk) => {
+                  const isSelected = selectedSkin === sk.id;
+                  return (
+                    <button
+                      key={sk.id}
+                      type="button"
+                      onClick={() => {
+                        soundFX.playUiTap();
+                        setSelectedSkin(sk.id);
+                      }}
+                      className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                          : 'bg-[#090D16]/85 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      {sk.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Primary Menu Actions (<= 3 CTA buttons) */}
-            <div className="mt-6 flex flex-wrap items-center gap-3.5">
+            <div className="mt-5 flex flex-wrap items-center gap-3.5">
               <button
                 type="button"
                 data-start="true"
-                onClick={() => startLocalGuestMatch('downtown_plaza', 1, 4, 'hider')}
+                onClick={() => {
+                  soundFX.playUiTap();
+                  startLocalGuestMatch(
+                    selectedTitleMap,
+                    MAPS[selectedTitleMap].recommendedSeekers,
+                    4,
+                    'hider'
+                  );
+                }}
                 className="min-h-[52px] px-7 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-base tracking-wide shadow-[0_6px_0_#065F46] active:translate-y-0.5 transition-all cursor-pointer"
               >
                 Play as Guest
@@ -905,7 +1034,10 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => setShowLobbyModal(true)}
+                onClick={() => {
+                  soundFX.playUiTap();
+                  setShowLobbyModal(true);
+                }}
                 className="min-h-[52px] px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-extrabold text-base tracking-wide shadow-[0_6px_0_#92400E] active:translate-y-0.5 transition-all cursor-pointer"
               >
                 Multiplayer Room &amp; Setup
@@ -913,12 +1045,13 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() =>
-                  startLocalGuestMatch('downtown_plaza', 1, 4, 'seeker')
-                }
+                onClick={() => {
+                  soundFX.playUiTap();
+                  startLocalGuestMatch(selectedTitleMap, 1, 4, 'seeker');
+                }}
                 className="min-h-[52px] px-5 py-3.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 text-red-300 border-2 border-red-500/50 font-display font-bold text-sm tracking-wide transition-colors cursor-pointer"
               >
-                Play as Seeker (Knight · 1.1×)
+                Play as Seeker (1.2× Speed)
               </button>
             </div>
           </div>
@@ -936,35 +1069,35 @@ export default function App() {
       {shellState === 'playing' && (
         <div className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-3 sm:p-5">
           {/* Top Perimeter Row */}
-          <div className="flex items-start justify-between gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3">
             {/* Cluster 1 (Top-Left): Role Emblem + Living Hiders Pips */}
-            <div className="pointer-events-auto bg-[#090D16]/90 border-2 border-slate-700 rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 shadow-lg flex items-center gap-2.5 sm:gap-3.5">
+            <div className="order-1 pointer-events-auto bg-[#090D16]/90 border-2 border-slate-700 rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 shadow-lg flex items-center gap-2 sm:gap-3.5">
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                  ROLE · {hud.isOnline ? `ROOM ${hud.roomCode}` : 'GUEST MATCH'}
+                <div className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  ROLE · {hud.isOnline ? `ROOM ${hud.roomCode}` : 'GUEST'}
                 </div>
                 <div
                   data-testid="hud-role"
-                  className={`text-lg sm:text-xl font-display font-extrabold tracking-wide uppercase ${
+                  className={`text-sm sm:text-xl font-display font-extrabold tracking-wide uppercase ${
                     hud.role === 'seeker' ? 'text-red-400' : 'text-emerald-400'
                   }`}
                 >
-                  {hud.role === 'seeker' ? 'SEEKER (110%)' : 'HIDER (100%)'}
+                  {hud.role === 'seeker' ? 'SEEKER (120%)' : 'HIDER (100%)'}
                 </div>
               </div>
 
-              <div className="pl-3 border-l border-slate-800">
-                <div className="text-[10px] font-mono uppercase text-slate-400">
+              <div className="pl-2 sm:pl-3 border-l border-slate-800">
+                <div className="text-[9px] sm:text-[10px] font-mono uppercase text-slate-400">
                   HIDERS ALIVE
                 </div>
-                <div className="flex items-center gap-1.5 mt-1">
+                <div className="flex items-center gap-1 sm:gap-1.5 mt-1">
                   {Array.from({ length: hud.totalHiders }).map((_, idx) => {
                     const isAlive = idx < hud.livingHiders;
                     return (
                       <svg
                         key={idx}
                         viewBox="0 0 24 24"
-                        className="w-4 h-4"
+                        className="w-3.5 h-3.5 sm:w-4 sm:h-4"
                         aria-hidden="true"
                       >
                         <rect
@@ -983,7 +1116,7 @@ export default function App() {
                       </svg>
                     );
                   })}
-                  <span className="ml-1 text-sm font-mono font-bold text-white tabular-nums">
+                  <span className="ml-1 text-xs sm:text-sm font-mono font-bold text-white tabular-nums">
                     {hud.livingHiders}/{hud.totalHiders}
                   </span>
                 </div>
@@ -991,15 +1124,15 @@ export default function App() {
             </div>
 
             {/* Cluster 2 (Top-Center): Authoritative 10s Countdown & 3-Stage Escape Beacon */}
-            <div className="pointer-events-auto bg-[#090D16]/90 border-2 border-slate-700 rounded-xl px-4 py-2.5 shadow-lg text-center min-w-[230px] sm:min-w-[290px]">
+            <div className="order-3 sm:order-2 w-full sm:w-auto pointer-events-auto bg-[#090D16]/90 border-2 border-slate-700 rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 shadow-lg text-center sm:min-w-[290px]">
               {hud.lifecycle === 'HIDER_HEAD_START' ? (
-                <div>
+                <div className="flex sm:block items-center justify-between gap-2">
                   <div className="text-[10px] font-mono uppercase tracking-wider text-amber-400">
                     HIDER HEAD START — SEEKER LOCKED
                   </div>
                   <div
                     data-testid="hud-countdown"
-                    className="text-2xl sm:text-3xl font-mono font-extrabold text-white tabular-nums"
+                    className="text-xl sm:text-3xl font-mono font-extrabold text-white tabular-nums"
                   >
                     {Math.ceil(hud.countdown)}s
                   </div>
@@ -1037,69 +1170,128 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <div className="mt-1 text-[11px] text-slate-300 truncate max-w-[280px] mx-auto">
+              <div className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] text-slate-300 truncate max-w-[280px] mx-auto">
                 {hud.latestEvent}
               </div>
             </div>
 
-            {/* Cluster 3 (Top-Right): Compact Square <svg> Utility Controls */}
-            <div className="pointer-events-auto flex items-center gap-2">
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label={muted ? 'Unmute audio' : 'Mute audio'}
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  soundFX.muted = !soundFX.muted;
-                  setMuted(soundFX.muted);
-                }}
-                className="w-11 h-11 rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-200 shadow-lg"
-              >
-                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M11 5L6 9H2v6h4l5 4V5z" />
-                  {muted ? (
-                    <path d="M23 9l-6 6M17 9l6 6" stroke="#EF4444" />
-                  ) : (
-                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
-                  )}
-                </svg>
-              </button>
-
-              {!hud.isOnline && (
+            {/* Cluster 3 (Top-Right): Compact Utility Controls + Transparent City Minimap */}
+            <div className="order-2 sm:order-3 pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   tabIndex={-1}
-                  aria-label="Restart round"
+                  aria-label={bgmEnabled ? 'Disable background music' : 'Enable background music'}
                   onClick={(e) => {
                     e.currentTarget.blur();
-                    const cfg = matchStateRef.current.config;
-                    startLocalGuestMatch(cfg.mapId, cfg.seekerCount, 4, hud.role);
+                    const next = soundFX.toggleBgm();
+                    setBgmEnabled(next);
                   }}
-                  className="w-11 h-11 rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-200 shadow-lg"
+                  className={`h-9 sm:h-11 px-2 sm:px-2.5 rounded-xl border-2 font-mono text-[10px] font-bold flex items-center justify-center shadow-lg ${
+                    bgmEnabled
+                      ? 'bg-emerald-950/90 border-emerald-400 text-emerald-300'
+                      : 'bg-[#090D16]/90 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
                 >
-                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
+                  BGM
+                </button>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={muted ? 'Unmute audio' : 'Mute audio'}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    const next = soundFX.toggleMute();
+                    setMuted(next);
+                  }}
+                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-200 shadow-lg"
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                    {muted ? (
+                      <path d="M23 9l-6 6M17 9l6 6" stroke="#EF4444" />
+                    ) : (
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
+                    )}
                   </svg>
                 </button>
-              )}
 
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label="Pause game"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  keysPressedRef.current.clear();
-                  setShellState('paused');
-                }}
-                className="w-11 h-11 rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-200 shadow-lg"
+                {!hud.isOnline && (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Restart round"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      const cfg = matchStateRef.current.config;
+                      startLocalGuestMatch(cfg.mapId, cfg.seekerCount, 4, hud.role);
+                    }}
+                    className="hidden sm:flex w-11 h-11 rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border-2 border-slate-700 items-center justify-center text-slate-200 shadow-lg"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                      <path d="M3 3v5h5" />
+                    </svg>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label="Pause game"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    keysPressedRef.current.clear();
+                    setShellState('paused');
+                  }}
+                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-200 shadow-lg"
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16" rx="1" />
+                    <rect x="14" y="4" width="4" height="16" rx="1" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Transparent City Layout & Relative Position Minimap */}
+              <div
+                data-testid="minimap-hud"
+                className="bg-[#090D16]/55 backdrop-blur-[2px] border border-slate-600/60 rounded-xl p-1 sm:p-1.5 shadow-lg"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16" rx="1" />
-                  <rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-              </button>
+                <div className="flex items-center justify-between gap-2 px-1 mb-0.5 sm:mb-1 text-[8px] sm:text-[9px] font-mono tracking-wider text-slate-200">
+                  <span className="font-bold text-amber-300 truncate">{hud.sectorLabel}</span>
+                  <span className="text-slate-300 tabular-nums">
+                    {hud.playerX},{hud.playerY}
+                  </span>
+                </div>
+                <canvas
+                  ref={minimapCanvasRef}
+                  width={168}
+                  height={118}
+                  data-testid="minimap-canvas"
+                  aria-label="Transparent city layout minimap showing player position"
+                  className="block w-[118px] h-[82px] sm:w-[168px] sm:h-[118px] rounded-lg border border-slate-700/60 pixelated"
+                />
+                <div className="mt-0.5 sm:mt-1 px-1 flex items-center justify-between text-[7px] sm:text-[8px] font-mono text-slate-300">
+                  <span className="flex items-center gap-1">
+                    <span
+                      className={`inline-block w-2 h-2 rounded-xs ${
+                        hud.role === 'seeker' ? 'bg-red-500' : 'bg-emerald-400'
+                      }`}
+                    />
+                    YOU
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-xs bg-amber-400" />
+                    BEACON
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-xs bg-sky-400" />
+                    HIDE
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
