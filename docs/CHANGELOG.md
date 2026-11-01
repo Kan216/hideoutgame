@@ -1,5 +1,14 @@
 # Changelog — CITY HIDEOUT
 
+## [1.9.0] — 2026-11-01
+### Fixed & Improved
+- **Universal Mobile, Web & PC UI Ergonomics & Viewport Responsiveness**:
+  - **Title Screen Mobile Landscape Redesign (`src/App.tsx`)**: Re-architected title screen into a scroll-touch container (`scroll-touch`, `touch-pan-y`) with a `min-h-full flex flex-col justify-between` layout. Moved the 3 primary play CTAs ("Play as Guest", "Seeker 1.2x", "Multiplayer Room") directly underneath the emblem so they are immediately visible on short mobile landscape screens (320px–360px) without scrolling. Converted Map Arena and Character Skin pickers into compact horizontal swipe strips (`flex overflow-x-auto no-scrollbar touch-pan-x`).
+  - **In-Game HUD Mobile Landscape Layout (`src/App.tsx`)**: Removed full-width row wrapping (`w-full` on Cluster 2) that caused the HUD to stack into 2-3 tall rows on mobile landscape. Unified the top perimeter into 3 non-wrapping clusters (`flex items-start justify-between gap-1.5 sm:gap-3 w-full`), keeping >85% of the canvas clear. Added compact alive indicator (`👤 4/4`), condensed countdown/beacon bars, and collapsible minimap toggle (`🗺️` button + tap-to-minimize).
+  - **Touch Scrolling & Gesture Conflict Resolution (`src/index.css`, `src/components/LobbyModal.tsx`, `src/components/GameModals.tsx`)**: Resolved touch scroll blocking caused by global `body { touch-action: none; }` by implementing `.scroll-touch`, `.touch-pan-y`, and `.touch-pan-x` utility classes. Added `max-h-[95vh] overflow-y-auto scroll-touch touch-pan-y` and notch/safe-area insets (`env(safe-area-inset-*)`) to all modals (`LobbyModal`, `PauseModal`, `GameOverModal`, `HowToPlayModal`) so all buttons and forms remain scrollable and accessible on phones.
+  - **Cross-Browser Fullscreen API (`src/App.tsx`)**: Added `webkitRequestFullscreen` / `webkitExitFullscreen` fallbacks for iOS Safari and mobile WebKit wrappers.
+  - **Compact Mobile Controls (`src/components/MobileControls.tsx`)**: Optimized thumb reach margins (`px-3 pb-2.5 sm:px-8 sm:pb-6`) and button sizing (`min-h-[46px]` / `min-w-[140px]`) with safe area insets so joystick and action buttons align comfortably with thumbs without obscuring central gameplay.
+
 ## [1.8.0] — 2026-11-01
 ### Added
 - **Commercial Production Polish & Quality-of-Life**:

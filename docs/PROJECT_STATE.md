@@ -1,7 +1,7 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
-**Milestone 8 (Complete)**: Commercial Production Tier Polish & Cross-Platform Playability — Server hardening (`/healthz`, rate limiting, 8-player cap, stale room GC), live network latency telemetry (`🟢/🟡/🔴 XXms`), 4-minute round match timer with timeout conditions, zero-GC floating world combat feedback text, overhead pixel-art speech bubbles with quick callouts, suspense proximity vignette with acoustic heartbeat audio, live toast elimination/event feed, spectator mode with target cycling, 1-click multiplayer invite link deep-linking (`?room=CODE`), post-match scorecard sharing, mobile physical haptic vibrations, fullscreen toggle, and PWA manifest + SVG icon.
+**Milestone 9 (Complete)**: Universal Mobile, Web & PC UI Ergonomics & Viewport Responsiveness — Redesigned Title screen with instant play CTAs above the fold on mobile landscape, horizontal swipe strips for maps and skins, non-wrapping 3-cluster in-game HUD with collapsible minimap, touch-scrollable modals (`scroll-touch`, `touch-pan-y`, `max-h-[95vh]`), notch/safe-area insets (`env(safe-area-inset-*)`), WebKit fullscreen fallbacks, and thumb-ergonomic virtual joystick and action buttons.
 
 ## 2. Completed Subsystems
 - **Pure Authoritative Game Logic (`/src/game/rules.ts`, `/src/game/maps.ts`)**:

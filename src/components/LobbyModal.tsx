@@ -97,12 +97,18 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-[#070A12]/90 overflow-y-auto"
+      className="fixed inset-0 z-40 overflow-y-auto scroll-touch touch-pan-y overscroll-contain flex items-start sm:items-center justify-center p-2.5 sm:p-4 bg-[#070A12]/92"
+      style={{
+        paddingTop: 'max(0.6rem, env(safe-area-inset-top, 0px))',
+        paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(0.6rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.6rem, env(safe-area-inset-right, 0px))',
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="lobby-heading"
     >
-      <div className="w-full max-w-4xl bg-[#111827] border-2 border-slate-700 rounded-2xl p-6 sm:p-8 shadow-2xl text-slate-100 my-auto">
+      <div className="w-full max-w-4xl bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-8 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
         {/* Top Row: Title + Guest Identity Status + Back Button */}
         <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-800">
           <div>

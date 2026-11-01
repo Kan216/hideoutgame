@@ -40,12 +40,18 @@ export const PauseModal: React.FC<PauseModalProps> = ({
 }) => {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#070A12]/85"
+      className="fixed inset-0 z-50 overflow-y-auto scroll-touch touch-pan-y overscroll-contain flex items-start sm:items-center justify-center p-2.5 sm:p-4 bg-[#070A12]/90"
+      style={{
+        paddingTop: 'max(0.6rem, env(safe-area-inset-top, 0px))',
+        paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(0.6rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.6rem, env(safe-area-inset-right, 0px))',
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="pause-modal-title"
     >
-      <div className="w-full max-w-md bg-[#111827] border-2 border-slate-700 rounded-2xl p-6 shadow-2xl text-slate-100">
+      <div className="w-full max-w-md bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-6 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
         <h2 id="pause-modal-title" className="text-2xl font-display font-extrabold text-white tracking-tight">
           GAME PAUSED
         </h2>
@@ -186,12 +192,18 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#070A12]/88"
+      className="fixed inset-0 z-50 overflow-y-auto scroll-touch touch-pan-y overscroll-contain flex items-start sm:items-center justify-center p-2.5 sm:p-4 bg-[#070A12]/92"
+      style={{
+        paddingTop: 'max(0.6rem, env(safe-area-inset-top, 0px))',
+        paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(0.6rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.6rem, env(safe-area-inset-right, 0px))',
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="gameover-modal-title"
     >
-      <div className="w-full max-w-lg bg-[#111827] border-2 border-slate-700 rounded-2xl p-6 sm:p-8 shadow-2xl text-slate-100">
+      <div className="w-full max-w-lg bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-8 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
         <div className="text-xs font-mono uppercase tracking-widest text-amber-400">
           {snapshot.winner === 'hiders' ? 'HIDER TEAM VICTORY' : 'SEEKER TEAM VICTORY'}
         </div>
@@ -275,12 +287,18 @@ interface HowToPlayModalProps {
 export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#070A12]/90 overflow-y-auto"
+      className="fixed inset-0 z-50 overflow-y-auto scroll-touch touch-pan-y overscroll-contain flex items-start sm:items-center justify-center p-2.5 sm:p-4 bg-[#070A12]/92"
+      style={{
+        paddingTop: 'max(0.6rem, env(safe-area-inset-top, 0px))',
+        paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(0.6rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.6rem, env(safe-area-inset-right, 0px))',
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="howto-title"
     >
-      <div className="w-full max-w-2xl bg-[#111827] border-2 border-slate-700 rounded-2xl p-6 sm:p-8 shadow-2xl text-slate-100 my-auto">
+      <div className="w-full max-w-2xl bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-8 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <h2 id="howto-title" className="text-2xl font-display font-extrabold text-white">
             HOW TO PLAY — CITY HIDEOUT

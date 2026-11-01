@@ -58,3 +58,30 @@
   -webkit-text-stroke: 3px #090D16;
   text-shadow: 0 2px 0 #090D16;
 }
+
+.touch-pan-y {
+  touch-action: pan-y !important;
+}
+
+.touch-pan-x {
+  touch-action: pan-x !important;
+}
+
+.touch-none {
+  touch-action: none !important;
+}
+
+.scroll-touch {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

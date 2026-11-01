@@ -73,11 +73,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
 
   return (
     <div
-      className="fixed inset-0 pointer-events-none z-30 flex items-end justify-between px-7 pb-7 sm:px-10 sm:pb-9"
+      className="fixed inset-0 pointer-events-none z-30 flex items-end justify-between px-3 pb-2.5 sm:px-8 sm:pb-6"
       style={{
-        paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom, 0px))',
-        paddingLeft: 'max(1.75rem, env(safe-area-inset-left, 0px))',
-        paddingRight: 'max(1.75rem, env(safe-area-inset-right, 0px))',
+        paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(0.75rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.75rem, env(safe-area-inset-right, 0px))',
       }}
       aria-label="Mobile touch controls"
     >
@@ -94,17 +94,17 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           (knobOffset.y / maxRadius) * 100
         )}% Y`}
         tabIndex={-1}
-        className="pointer-events-auto relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#090D16]/85 border-2 border-slate-600/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] flex items-center justify-center touch-none select-none"
+        className="pointer-events-auto relative w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-[#090D16]/85 border-2 border-slate-600/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] flex items-center justify-center touch-none select-none"
       >
         {/* Crosshair directional ticks */}
-        <div className="w-20 h-0.5 bg-slate-700/50 absolute pointer-events-none" />
-        <div className="h-20 w-0.5 bg-slate-700/50 absolute pointer-events-none" />
+        <div className="w-16 h-0.5 bg-slate-700/50 absolute pointer-events-none" />
+        <div className="h-16 w-0.5 bg-slate-700/50 absolute pointer-events-none" />
         {/* Thumb Knob */}
         <div
           style={{
             transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
           }}
-          className={`w-12 h-12 rounded-full border-2 shadow-md transition-transform duration-75 pointer-events-none ${
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 shadow-md transition-transform duration-75 pointer-events-none ${
             role === 'seeker'
               ? 'bg-red-600/90 border-red-300'
               : 'bg-emerald-600/90 border-emerald-300'
@@ -113,7 +113,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       </div>
 
       {/* Right Side: Quick Emotes Drawer & Contextual Role Action Buttons */}
-      <div className="pointer-events-auto flex flex-col items-end gap-2.5">
+      <div className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2.5">
         {/* Quick Emote Drawer */}
         {showEmotes && onSendEmote && (
           <div className="bg-[#090D16]/95 border-2 border-slate-700 rounded-2xl p-2 shadow-2xl grid grid-cols-3 gap-1.5 mb-1 max-w-[240px]">
@@ -144,10 +144,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               e.stopPropagation();
               setShowEmotes(!showEmotes);
             }}
-            className="h-10 px-3 rounded-xl bg-[#090D16]/90 border border-slate-700 hover:bg-slate-800 text-xs font-mono font-bold text-amber-300 shadow flex items-center gap-1.5"
+            className="h-8 sm:h-10 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-[#090D16]/90 border border-slate-700 hover:bg-slate-800 text-[11px] sm:text-xs font-mono font-bold text-amber-300 shadow flex items-center gap-1.5"
           >
             <span>💬</span>
-            <span className="text-[11px] font-sans">Callout</span>
+            <span className="text-[10px] sm:text-[11px] font-sans">Callout</span>
           </button>
         )}
 
@@ -178,14 +178,14 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   navigator.vibrate?.(20);
                   onHoldObjectiveChange(!isHoldingObjective);
                 }}
-                className={`min-h-[56px] min-w-[168px] px-5 py-3 rounded-2xl font-display font-bold text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
+                className={`min-h-[46px] sm:min-h-[56px] min-w-[140px] sm:min-w-[168px] px-4 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-display font-bold text-xs sm:text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
                   isHoldingObjective
                     ? 'bg-emerald-500 text-slate-950 border-emerald-200'
                     : 'bg-amber-500 text-slate-950 border-amber-200'
                 }`}
               >
                 <span>{isHoldingObjective ? 'HOLDING BEACON...' : 'HOLD BEACON'}</span>
-                <span className="text-[11px] font-mono opacity-90">{act.sublabel}</span>
+                <span className="text-[10px] sm:text-[11px] font-mono opacity-90">{act.sublabel}</span>
               </button>
             );
           }
@@ -200,7 +200,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 navigator.vibrate?.(25);
                 onTriggerAction(act);
               }}
-              className={`min-h-[56px] min-w-[164px] px-5 py-3 rounded-2xl font-display font-bold text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
+              className={`min-h-[46px] sm:min-h-[56px] min-w-[140px] sm:min-w-[164px] px-4 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-display font-bold text-xs sm:text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
                 isElim
                   ? 'bg-red-600 text-white border-red-300'
                   : isInspect
@@ -217,7 +217,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   ? 'ELIMINATE HIDER'
                   : 'INSPECT OBJECT'}
               </span>
-              <span className="text-[11px] font-sans font-medium opacity-90 truncate max-w-[180px]">
+              <span className="text-[10px] sm:text-[11px] font-sans font-medium opacity-90 truncate max-w-[160px]">
                 {act.label}
               </span>
             </button>

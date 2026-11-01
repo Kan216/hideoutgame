@@ -15,6 +15,11 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 
 ## 2. Browser, Mobile & Multi-Client Verification (`playwright-cli`)
 - **Desktop Viewport (`1440×900`)**: Title screen renders live pixel-art world tour + 4-map selector + 7-skin selector + BGM toggle; clicking **Play as Guest** enters `'playing'` immediately with 10s head-start countdown, real PNG character/object sprites, WAV SFX, unobstructed HUD + corner minimap, real-time toast feed, round timer, zero-GC floating world combat feedback text, and spectator mode target cycling.
-- **Mobile Viewport (`390×844` & Landscape)**: Virtual thumb joystick and contextual right-side action buttons (`HIDE INSIDE`, `HOLD BEACON`, `INSPECT OBJECT`, `ELIMINATE HIDER`) render cleanly with `>=56px` touch targets, notch safe area insets (`env(safe-area-inset-*)`), and physical vibration feedback (`navigator.vibrate`).
+- **Mobile Viewport (`390×844` Portrait & `667×375` / `740×360` Landscape)**:
+  - Title screen displays primary action buttons ("Play as Guest", "Seeker 1.2x", "Multiplayer Room") immediately below emblem without scrolling.
+  - Horizontal swipe strips for Map Arena and Character Skin selection allow rapid browsing in 34px vertical height.
+  - In-game HUD keeps >85% canvas area completely clear with a 3-cluster single-line top perimeter and collapsible minimap.
+  - Virtual thumb joystick and contextual action buttons render cleanly with thumb-reachable margins, notch/safe-area insets (`env(safe-area-inset-*)`), and physical vibration feedback (`navigator.vibrate`).
+  - All modals (`LobbyModal`, `PauseModal`, `GameOverModal`, `HowToPlayModal`) feature smooth touch-scrolling (`scroll-touch`, `touch-pan-y`) with `max-h-[95vh]` constraint preventing overflow clipping.
 - **Online Multiplayer Lobby & Invite Links**: Creating an online room over WebSocket (`/ws`) supports all 4 maps and 7 skins, generates a 6-character Room Code, provides 1-click "📋 Invite Link" deep-linking (`?room=CODE`), and auto-joins rooms upon loading.
-- **PWA & Offline Capability**: PWA manifest (`public/manifest.json`) and vector favicon icon (`public/icon.svg`) verified with standalone display capability and fullscreen toggle.
+- **PWA & Offline Capability**: PWA manifest (`public/manifest.json`) and vector favicon icon (`public/icon.svg`) verified with standalone display capability and WebKit fullscreen toggle.
