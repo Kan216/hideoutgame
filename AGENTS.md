@@ -28,6 +28,7 @@
 
 ## 4. Mobile Controls & UX Rules
 - Virtual thumb joystick on the bottom-left and contextual interaction button(s) on the bottom-right (`/src/components/MobileControls.tsx`).
+- Phones in landscape match `sm:` width breakpoints but are short: every HUD/mobile-control size set with `sm:` must also get a compact `short:*!` override (variant defined in `src/index.css`, `max-height: 520px`).
 - Show **only** actions currently valid for the player's role, distance, and state (`Hide`, `Exit Hiding`, `Hold Beacon`, `Inspect`, `Eliminate`).
 
 ## 5. Testing & How to Resume Work

@@ -20,6 +20,9 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 ### Balance simulation
 `npm run simulate [matchesPerMap] [seekerCount]` — headless bot-vs-bot. Latest (30/map, 1v4): Downtown 87%, Harbor 63%, Modern 83%, Mystic 67% seeker wins (≈75% overall, ≈100s matches). 2v5 bot-only is still 100% seeker — see IMPROVEMENT_PLAN follow-ups.
 
+### v2.0.1 mobile landscape HUD check
+- Playwright Android landscape 853×393 (touch, DPR 2): seeker after release, callout bar open, hider during head start — HUD occupies only the top strip + corners; desktop 1280×720 unchanged; 0 console errors.
+
 ### v2.0 browser verification (Playwright, headless Chromium)
 - Desktop 1280×720 offline match: 60 fps, 0 console errors, fog of war, relay beacon, noise rings, sprint HUD.
 - iPhone 13 landscape: sprint button + shortened HOLD BEACON button.

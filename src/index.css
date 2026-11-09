@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Short screens = phones in landscape (wide enough for `sm:` but only ~360–430px tall).
+   Use `short:<utility>!` to force the compact HUD there. */
+@custom-variant short (@media (max-height: 520px));
+
 @font-face {
   font-family: 'PixelOperator8';
   src: url('/assets/packs/brackeys/brackeys_platformer_assets/fonts/PixelOperator8.ttf') format('truetype');

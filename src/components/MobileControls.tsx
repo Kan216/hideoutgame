@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ContextualActionPrompt } from '../game/rules';
 
 interface MobileControlsProps {
@@ -39,6 +39,13 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [showEmotes, setShowEmotes] = useState(false);
+
+  // The callout bar closes itself so it never stays over the game
+  useEffect(() => {
+    if (!showEmotes) return;
+    const t = setTimeout(() => setShowEmotes(false), 4000);
+    return () => clearTimeout(t);
+  }, [showEmotes]);
 
   if (!visible) return null;
 
@@ -103,7 +110,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           (knobOffset.y / maxRadius) * 100
         )}% Y`}
         tabIndex={-1}
-        className="pointer-events-auto relative w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-[#090D16]/85 border-2 border-slate-600/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] flex items-center justify-center touch-none select-none"
+        className="pointer-events-auto relative w-24 h-24 sm:w-28 sm:h-28 short:w-[88px]! short:h-[88px]! rounded-full bg-[#090D16]/85 border-2 border-slate-600/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] flex items-center justify-center touch-none select-none"
       >
         {/* Crosshair directional ticks */}
         <div className="w-16 h-0.5 bg-slate-700/50 absolute pointer-events-none" />
@@ -113,7 +120,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           style={{
             transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
           }}
-          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 shadow-md transition-transform duration-75 pointer-events-none ${
+          className={`w-10 h-10 sm:w-12 sm:h-12 short:w-9! short:h-9! rounded-full border-2 shadow-md transition-transform duration-75 pointer-events-none ${
             role === 'seeker'
               ? 'bg-red-600/90 border-red-300'
               : 'bg-emerald-600/90 border-emerald-300'
@@ -122,23 +129,25 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       </div>
 
       {/* Right Side: Quick Emotes Drawer & Contextual Role Action Buttons */}
-      <div className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2.5">
+      <div className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2.5 short:gap-1.5!">
         {/* Quick Emote Drawer */}
         {showEmotes && onSendEmote && (
-          <div className="bg-[#090D16]/95 border-2 border-slate-700 rounded-2xl p-2 shadow-2xl grid grid-cols-3 gap-1.5 mb-1 max-w-[240px]">
+          <div className="bg-[#090D16]/90 border border-slate-700 rounded-xl p-1 shadow-xl flex items-center gap-1">
             {QUICK_EMOTES.map((em) => (
               <button
                 key={em}
                 type="button"
+                aria-label={em}
+                title={em}
                 onClick={(e) => {
                   e.stopPropagation();
                   navigator.vibrate?.(12);
                   onSendEmote(em);
                   setShowEmotes(false);
                 }}
-                className="px-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono font-bold text-white border border-slate-700 shadow"
+                className="w-9 h-9 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-base border border-slate-700 flex items-center justify-center"
               >
-                {em}
+                {em.split(' ')[0]}
               </button>
             ))}
           </div>
@@ -153,10 +162,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               e.stopPropagation();
               setShowEmotes(!showEmotes);
             }}
-            className="h-8 sm:h-10 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-[#090D16]/90 border border-slate-700 hover:bg-slate-800 text-[11px] sm:text-xs font-mono font-bold text-amber-300 shadow flex items-center gap-1.5"
+            className="h-8 sm:h-10 short:h-8! px-2.5 sm:px-3 short:px-2! rounded-lg sm:rounded-xl short:rounded-lg! bg-[#090D16]/90 border border-slate-700 hover:bg-slate-800 text-[11px] sm:text-xs font-mono font-bold text-amber-300 shadow flex items-center gap-1.5"
           >
             <span>💬</span>
-            <span className="text-[10px] sm:text-[11px] font-sans">Callout</span>
+            <span className="text-[10px] sm:text-[11px] font-sans short:hidden">Callout</span>
           </button>
         )}
 
@@ -170,7 +179,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               navigator.vibrate?.(15);
               onSprint?.();
             }}
-            className={`relative w-[58px] h-[58px] sm:w-[68px] sm:h-[68px] rounded-full border-2 shadow-xl font-display font-bold text-[11px] flex flex-col items-center justify-center active:scale-95 transition-transform overflow-hidden ${
+            className={`relative w-[58px] h-[58px] sm:w-[68px] sm:h-[68px] short:w-[50px]! short:h-[50px]! short:text-[9px]! rounded-full border-2 shadow-xl font-display font-bold text-[11px] flex flex-col items-center justify-center active:scale-95 transition-transform overflow-hidden ${
               sprinting
                 ? 'bg-sky-400 text-slate-950 border-sky-100'
                 : sprintCooldown > 0
@@ -210,14 +219,14 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   navigator.vibrate?.(20);
                   onHoldObjectiveChange(!isHoldingObjective);
                 }}
-                className={`min-h-[46px] sm:min-h-[56px] min-w-[140px] sm:min-w-[168px] px-4 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-display font-bold text-xs sm:text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
+                className={`min-h-[46px] sm:min-h-[56px] min-w-[140px] sm:min-w-[168px] px-4 sm:px-5 py-2 sm:py-3 short:min-h-[40px]! short:min-w-[120px]! short:px-3! short:py-1.5! short:text-xs! short:rounded-xl! rounded-xl sm:rounded-2xl font-display font-bold text-xs sm:text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
                   isHoldingObjective
                     ? 'bg-emerald-500 text-slate-950 border-emerald-200'
                     : 'bg-amber-500 text-slate-950 border-amber-200'
                 }`}
               >
                 <span>{isHoldingObjective ? 'HOLDING BEACON...' : 'HOLD BEACON'}</span>
-                <span className="text-[10px] sm:text-[11px] font-mono opacity-90">{act.sublabel}</span>
+                <span className="text-[10px] sm:text-[11px] font-mono opacity-90 short:hidden">{act.sublabel}</span>
               </button>
             );
           }
@@ -232,7 +241,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 navigator.vibrate?.(25);
                 onTriggerAction(act);
               }}
-              className={`min-h-[46px] sm:min-h-[56px] min-w-[140px] sm:min-w-[164px] px-4 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-display font-bold text-xs sm:text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
+              className={`min-h-[46px] sm:min-h-[56px] min-w-[140px] sm:min-w-[164px] px-4 sm:px-5 py-2 sm:py-3 short:min-h-[40px]! short:min-w-[120px]! short:px-3! short:py-1.5! short:text-xs! short:rounded-xl! rounded-xl sm:rounded-2xl font-display font-bold text-xs sm:text-sm tracking-wide border-2 shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center ${
                 isElim
                   ? 'bg-red-600 text-white border-red-300'
                   : isInspect
@@ -249,7 +258,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   ? 'CATCH HIDER'
                   : 'SEARCH OBJECT'}
               </span>
-              <span className="text-[10px] sm:text-[11px] font-sans font-medium opacity-90 truncate max-w-[160px]">
+              <span className="text-[10px] sm:text-[11px] font-sans font-medium opacity-90 truncate max-w-[160px] short:hidden">
                 {act.label}
               </span>
             </button>

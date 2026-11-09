@@ -1,5 +1,12 @@
 # Changelog — CITY HIDEOUT
 
+## [2.0.1] — 2026-11-09
+### Fixed — mobile landscape HUD covering the game
+- Phones in landscape are wide (≥640px → `sm:` desktop sizes) but short (~360–430px), so they got the full desktop HUD. Added a Tailwind `short` variant (`@media (max-height: 520px)`, `src/index.css`) and compact `short:*!` overrides for the top clusters, minimap (100×70, no legend/coords), toasts and mobile controls.
+- Event toasts: hide the "checked … — Empty" search spam, show each toast for ~4.5s only (client first-seen time), max 2 on short screens / 3 elsewhere.
+- Quick callouts: one slim row of emoji buttons that closes itself after 4s; icon-only toggle on short screens.
+- Smaller joystick, sprint and action buttons (action sublabels hidden) on short screens.
+
 ## [2.0.0] — 2026-11-09
 ### Game logic
 - **Seekers can finally search objects**: human seekers get a `Search` contextual action (previously only bots could inspect). Searching an occupied object **flushes** the hider out (stunned 0.25s, revealed 1.5s to that seeker); the seeker is busy for 1.1s, so a quick hider can escape.

@@ -1,6 +1,8 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
+**v2.0.1**: compact HUD for short (landscape phone) screens via the `short` Tailwind variant.
+
 **Milestone 10 (Complete, v2.0.0)**: Gameplay & visual overhaul — seeker search/flush, anti spot-chaining, hider sprint, two escape beacons with a signal-tower construction animation, fog of war + perception, server-side anti-cheat filtering, A* bots, headless balance simulation, online interpolation. See `docs/IMPROVEMENT_PLAN.md` and `docs/CHANGELOG.md`.
 
 **Previous — Milestone 9 (Complete)**: Universal Mobile, Web & PC UI Ergonomics & Viewport Responsiveness — Redesigned Title screen with instant play CTAs above the fold on mobile landscape, horizontal swipe strips for maps and skins, non-wrapping 3-cluster in-game HUD with collapsible minimap, touch-scrollable modals (`scroll-touch`, `touch-pan-y`, `max-h-[95vh]`), notch/safe-area insets (`env(safe-area-inset-*)`), WebKit fullscreen fallbacks, and thumb-ergonomic virtual joystick and action buttons.

@@ -126,6 +126,7 @@ export default function App() {
   const [touchMode, setTouchMode] = useState<'auto' | 'on' | 'off'>('auto');
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
+  const [isShortViewport, setIsShortViewport] = useState(false);
   const [minimapVisible, setMinimapVisible] = useState(true);
   const [joystickSensitivity, setJoystickSensitivity] = useState<number>(() => {
     const saved = localStorage.getItem('ch_joy_sens');
@@ -211,6 +212,8 @@ export default function App() {
   );
   const cameraRef = useRef<{ x: number; y: number } | null>(null);
   const fogPolyRef = useRef<number[]>([]);
+  /** Client-side first-seen time per event id (server clocks may differ), used to auto-hide toasts. */
+  const eventSeenAtRef = useRef<Map<string, number>>(new Map());
 
   /** Fire sound/particles/shake for every match event we have not seen yet (online + offline). */
   const processNewMatchEventsRef = useRef<(st: MatchState) => void>(() => {});
@@ -399,6 +402,7 @@ export default function App() {
       const isMobile = coarse || window.innerWidth <= 920;
       setIsMobileViewport(isMobile);
       setIsPortrait(window.innerHeight > window.innerWidth && isMobile);
+      setIsShortViewport(window.innerHeight <= 520);
     };
     checkViewport();
     window.addEventListener('resize', checkViewport);
@@ -1074,7 +1078,24 @@ export default function App() {
             pingMs: pingMsRef.current,
             spectatingPlayerName: specTarget ? specTarget.name : null,
             spectatingRole: specTarget ? specTarget.role : null,
-            activeEvents: st.events.slice(0, 4),
+            activeEvents: (() => {
+              // Toast feed: only meaningful events, each visible for ~4.5s after it first appears
+              const nowMs = Date.now();
+              const seen = eventSeenAtRef.current;
+              const out: MatchEventLog[] = [];
+              for (const e of st.events) {
+                if (!seen.has(e.id)) seen.set(e.id, nowMs);
+                if (e.type === 'inspect_empty') continue;
+                if (nowMs - (seen.get(e.id) ?? nowMs) > 4500) continue;
+                out.push(e);
+                if (out.length >= 3) break;
+              }
+              if (seen.size > 200) {
+                const keep = new Set(st.events.map((e) => e.id));
+                for (const id of seen.keys()) if (!keep.has(id)) seen.delete(id);
+              }
+              return out;
+            })(),
             sprintCooldown: localP?.sprintCooldownRemaining ?? 0,
             sprinting: (localP?.sprintRemaining ?? 0) > 0,
             rehideCooldown: localP?.rehideCooldownRemaining ?? 0,
@@ -1557,7 +1578,7 @@ export default function App() {
           ===================================================================== */}
       {shellState === 'playing' && (
         <div
-          className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-2 sm:p-5"
+          className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-2 sm:p-5 short:p-1.5!"
           style={{
             paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))',
             paddingLeft: 'max(0.5rem, env(safe-area-inset-left, 0px))',
@@ -1566,11 +1587,11 @@ export default function App() {
           }}
         >
           {/* Top Perimeter Row: 3 Non-wrapping Clusters with high visual clarity */}
-          <div className="flex items-start justify-between gap-1.5 sm:gap-3 w-full">
+          <div className="flex items-start justify-between gap-1.5 sm:gap-3 short:gap-1.5! w-full">
             {/* Cluster 1 (Top-Left): Role Emblem + Living Hiders + Ping */}
-            <div className="order-1 pointer-events-auto bg-[#090D16]/90 border border-slate-700 sm:border-2 rounded-lg sm:rounded-xl px-2 py-1 sm:px-3.5 sm:py-2.5 shadow-lg flex items-center gap-1.5 sm:gap-3.5 shrink-0">
+            <div className="order-1 pointer-events-auto bg-[#090D16]/90 border border-slate-700 sm:border-2 rounded-lg sm:rounded-xl px-2 py-1 sm:px-3.5 sm:py-2.5 short:border! short:rounded-lg! short:px-2! short:py-1! short:gap-1.5! shadow-lg flex items-center gap-1.5 sm:gap-3.5 shrink-0">
               <div>
-                <div className="text-[8px] sm:text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1 sm:gap-1.5">
+                <div className="text-[8px] sm:text-[10px] short:text-[8px]! font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1 sm:gap-1.5">
                   <span className="hidden xs:inline">ROLE · </span>
                   <span>{hud.isOnline ? `RM ${hud.roomCode}` : 'GUEST'}</span>
                   <span className="px-1 py-0.2 rounded bg-slate-900 border border-slate-700 text-[8px] sm:text-[9px] font-mono text-slate-300">
@@ -1583,7 +1604,7 @@ export default function App() {
                 </div>
                 <div
                   data-testid="hud-role"
-                  className={`text-xs sm:text-xl font-display font-extrabold tracking-wide uppercase ${
+                  className={`text-xs sm:text-xl short:text-sm! font-display font-extrabold tracking-wide uppercase ${
                     hud.role === 'seeker' ? 'text-red-400' : 'text-emerald-400'
                   }`}
                 >
@@ -1591,12 +1612,12 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="pl-1.5 sm:pl-3 border-l border-slate-800">
-                <div className="text-[8px] sm:text-[10px] font-mono uppercase text-slate-400 hidden xs:block">
+              <div className="pl-1.5 sm:pl-3 short:pl-1.5! border-l border-slate-800">
+                <div className="text-[8px] sm:text-[10px] font-mono uppercase text-slate-400 hidden xs:block short:hidden!">
                   ALIVE
                 </div>
                 <div className="flex items-center gap-1 sm:gap-1.5 sm:mt-1">
-                  <div className="hidden sm:flex items-center gap-1">
+                  <div className="hidden sm:flex short:hidden! items-center gap-1">
                     {Array.from({ length: hud.totalHiders }).map((_, idx) => {
                       const isAlive = idx < hud.livingHiders;
                       return (
@@ -1624,7 +1645,7 @@ export default function App() {
                     })}
                   </div>
                   <span className="text-xs sm:text-sm font-mono font-bold text-white tabular-nums flex items-center gap-1">
-                    <span className="sm:hidden text-emerald-400">👤</span>
+                    <span className="sm:hidden short:inline! text-emerald-400">👤</span>
                     <span>{hud.livingHiders}/{hud.totalHiders}</span>
                   </span>
                 </div>
@@ -1632,7 +1653,7 @@ export default function App() {
             </div>
 
             {/* Cluster 2 (Top-Center): Authoritative Countdown, Round Timer, & 3-Stage Escape Beacon */}
-            <div className="order-2 pointer-events-auto bg-[#090D16]/90 border border-slate-700 sm:border-2 rounded-lg sm:rounded-xl px-2 py-1 sm:px-4 sm:py-2.5 shadow-lg text-center shrink min-w-0 max-w-[220px] sm:max-w-none sm:min-w-[280px]">
+            <div className="order-2 pointer-events-auto bg-[#090D16]/90 border border-slate-700 sm:border-2 rounded-lg sm:rounded-xl px-2 py-1 sm:px-4 sm:py-2.5 short:border! short:rounded-lg! short:px-2! short:py-1! short:min-w-[190px]! short:max-w-[240px]! shadow-lg text-center shrink min-w-0 max-w-[220px] sm:max-w-none sm:min-w-[280px]">
               {hud.lifecycle === 'HIDER_HEAD_START' ? (
                 <div className="flex items-center justify-center gap-1.5 sm:gap-2">
                   <div className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-amber-400">
@@ -1640,19 +1661,19 @@ export default function App() {
                   </div>
                   <div
                     data-testid="hud-countdown"
-                    className="text-base sm:text-2xl font-mono font-extrabold text-white tabular-nums"
+                    className="text-base sm:text-2xl short:text-base! font-mono font-extrabold text-white tabular-nums"
                   >
                     {Math.ceil(hud.countdown)}s
                   </div>
                 </div>
               ) : (
                 <div>
-                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-mono uppercase text-slate-300 mb-0.5 sm:mb-1 gap-1.5">
+                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] short:text-[9px]! font-mono uppercase text-slate-300 mb-0.5 sm:mb-1 short:mb-0.5! gap-1.5">
                     <span>BEACON {hud.stagesCompleted}/{hud.totalStages}</span>
                     <span className="text-amber-300 font-bold tabular-nums">
                       ⏱️ {formatMatchTime(hud.matchTimerRemaining)}
                     </span>
-                    <span className="text-slate-400 tabular-nums hidden xs:inline">
+                    <span className="text-slate-400 tabular-nums hidden xs:inline short:hidden!">
                       {hud.stageProgress > 0
                         ? `${Math.ceil(hud.stageDuration - hud.stageProgress)}s`
                         : `${hud.stageDuration}s/stg · 2 beacons`}
@@ -1669,7 +1690,7 @@ export default function App() {
                       return (
                         <div
                           key={sIdx}
-                          className="h-1.5 sm:h-2.5 rounded bg-slate-800 border border-slate-700 overflow-hidden"
+                          className="h-1.5 sm:h-2.5 short:h-1.5! rounded bg-slate-800 border border-slate-700 overflow-hidden"
                         >
                           <div
                             style={{ transform: `scaleX(${pct / 100})` }}
@@ -1681,20 +1702,20 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <div className="mt-0.5 text-[9px] sm:text-[11px] text-slate-300 truncate max-w-[200px] sm:max-w-[280px] mx-auto hidden sm:block">
+              <div className="mt-0.5 text-[9px] sm:text-[11px] text-slate-300 truncate max-w-[200px] sm:max-w-[280px] mx-auto hidden sm:block short:hidden!">
                 {hud.latestEvent}
               </div>
             </div>
 
             {/* Cluster 3 (Top-Right): Compact Controls + Minimap (collapsible on mobile) */}
-            <div className="order-3 pointer-events-auto flex flex-col items-end gap-1 sm:gap-2 shrink-0">
+            <div className="order-3 pointer-events-auto flex flex-col items-end gap-1 sm:gap-2 short:gap-1! shrink-0">
               <div className="flex items-center gap-1 sm:gap-1.5">
                 <button
                   type="button"
                   tabIndex={-1}
                   aria-label="Toggle Fullscreen"
                   onClick={toggleFullscreen}
-                  className="w-7 h-7 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border border-slate-700 sm:border-2 text-sky-300 font-mono text-[10px] sm:text-sm font-bold flex items-center justify-center shadow-lg cursor-pointer"
+                  className="w-7 h-7 sm:w-11 sm:h-11 short:w-7! short:h-7! short:border! rounded-lg sm:rounded-xl short:rounded-lg! bg-[#090D16]/90 hover:bg-slate-800 border border-slate-700 sm:border-2 text-sky-300 font-mono text-[10px] sm:text-sm font-bold flex items-center justify-center shadow-lg cursor-pointer"
                 >
                   ⛶
                 </button>
@@ -1704,7 +1725,7 @@ export default function App() {
                   tabIndex={-1}
                   aria-label="Toggle Minimap"
                   onClick={() => setMinimapVisible((v) => !v)}
-                  className={`w-7 h-7 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl border border-slate-700 sm:border-2 text-[10px] sm:text-xs font-bold flex items-center justify-center shadow-lg cursor-pointer ${
+                  className={`w-7 h-7 sm:w-11 sm:h-11 short:w-7! short:h-7! short:border! rounded-lg sm:rounded-xl short:rounded-lg! border border-slate-700 sm:border-2 text-[10px] sm:text-xs font-bold flex items-center justify-center shadow-lg cursor-pointer ${
                     minimapVisible
                       ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
                       : 'bg-[#090D16]/90 hover:bg-slate-800 text-slate-400'
@@ -1722,7 +1743,7 @@ export default function App() {
                     const next = soundFX.toggleBgm();
                     setBgmEnabled(next);
                   }}
-                  className={`h-7 px-1.5 sm:h-11 sm:px-2.5 rounded-lg sm:rounded-xl border border-slate-700 sm:border-2 font-mono text-[8px] sm:text-[10px] font-bold flex items-center justify-center shadow-lg ${
+                  className={`h-7 px-1.5 sm:h-11 sm:px-2.5 short:h-7! short:px-1.5! short:text-[8px]! short:border! rounded-lg sm:rounded-xl short:rounded-lg! border border-slate-700 sm:border-2 font-mono text-[8px] sm:text-[10px] font-bold flex items-center justify-center shadow-lg ${
                     bgmEnabled
                       ? 'bg-emerald-950/90 border-emerald-400 text-emerald-300'
                       : 'bg-[#090D16]/90 hover:bg-slate-800 text-slate-300'
@@ -1740,9 +1761,9 @@ export default function App() {
                     const next = soundFX.toggleMute();
                     setMuted(next);
                   }}
-                  className="w-7 h-7 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border border-slate-700 sm:border-2 flex items-center justify-center text-slate-200 shadow-lg cursor-pointer"
+                  className="w-7 h-7 sm:w-11 sm:h-11 short:w-7! short:h-7! short:border! rounded-lg sm:rounded-xl short:rounded-lg! bg-[#090D16]/90 hover:bg-slate-800 border border-slate-700 sm:border-2 flex items-center justify-center text-slate-200 shadow-lg cursor-pointer"
                 >
-                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 sm:w-5 sm:h-5 short:w-3.5! short:h-3.5!" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M11 5L6 9H2v6h4l5 4V5z" />
                     {muted ? (
                       <path d="M23 9l-6 6M17 9l6 6" stroke="#EF4444" />
@@ -1761,9 +1782,9 @@ export default function App() {
                     keysPressedRef.current.clear();
                     setShellState('paused');
                   }}
-                  className="w-7 h-7 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-[#090D16]/90 hover:bg-slate-800 border border-slate-700 sm:border-2 flex items-center justify-center text-slate-200 shadow-lg cursor-pointer"
+                  className="w-7 h-7 sm:w-11 sm:h-11 short:w-7! short:h-7! short:border! rounded-lg sm:rounded-xl short:rounded-lg! bg-[#090D16]/90 hover:bg-slate-800 border border-slate-700 sm:border-2 flex items-center justify-center text-slate-200 shadow-lg cursor-pointer"
                 >
-                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 sm:w-5 sm:h-5" fill="currentColor">
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 sm:w-5 sm:h-5 short:w-3.5! short:h-3.5!" fill="currentColor">
                     <rect x="6" y="4" width="4" height="16" rx="1" />
                     <rect x="14" y="4" width="4" height="16" rx="1" />
                   </svg>
@@ -1777,12 +1798,12 @@ export default function App() {
                   onClick={() => {
                     if (isMobileViewport) setMinimapVisible(false);
                   }}
-                  className="bg-[#090D16]/65 backdrop-blur-[2px] border border-slate-600/60 rounded-lg sm:rounded-xl p-0.5 sm:p-1.5 shadow-lg cursor-pointer"
+                  className="bg-[#090D16]/65 backdrop-blur-[2px] border border-slate-600/60 rounded-lg sm:rounded-xl short:rounded-lg! p-0.5 sm:p-1.5 short:p-0.5! shadow-lg cursor-pointer"
                   title="Click to collapse minimap on mobile"
                 >
-                  <div className="flex items-center justify-between gap-1.5 px-0.5 mb-0.5 text-[7px] sm:text-[9px] font-mono tracking-wider text-slate-200">
+                  <div className="flex items-center justify-between gap-1.5 px-0.5 mb-0.5 text-[7px] sm:text-[9px] short:text-[7px]! font-mono tracking-wider text-slate-200">
                     <span className="font-bold text-amber-300 truncate max-w-[60px] sm:max-w-none">{hud.sectorLabel}</span>
-                    <span className="text-slate-300 tabular-nums">
+                    <span className="text-slate-300 tabular-nums short:hidden!">
                       {hud.playerX},{hud.playerY}
                     </span>
                   </div>
@@ -1792,9 +1813,9 @@ export default function App() {
                     height={118}
                     data-testid="minimap-canvas"
                     aria-label="City layout minimap showing player position"
-                    className="block w-[86px] h-[60px] sm:w-[168px] sm:h-[118px] rounded border border-slate-700/60 pixelated"
+                    className="block w-[86px] h-[60px] sm:w-[168px] sm:h-[118px] short:w-[100px]! short:h-[70px]! rounded border border-slate-700/60 pixelated"
                   />
-                  <div className="mt-0.5 px-0.5 flex items-center justify-between text-[6px] sm:text-[8px] font-mono text-slate-300">
+                  <div className="mt-0.5 px-0.5 flex items-center justify-between text-[6px] sm:text-[8px] font-mono text-slate-300 short:hidden!">
                     <span className="flex items-center gap-0.5">
                       <span
                         className={`inline-block w-1.5 h-1.5 rounded-xs ${
@@ -1902,8 +1923,8 @@ export default function App() {
 
       {/* Real-time Elimination & Event Feed Toast Stack */}
       {shellState === 'playing' && hud.activeEvents.length > 0 && (
-        <div className="fixed top-24 left-3 sm:left-5 z-25 pointer-events-none flex flex-col gap-1.5 max-w-[260px] sm:max-w-[340px]">
-          {hud.activeEvents.map((evt) => {
+        <div className="fixed top-24 left-3 sm:left-5 short:top-[60px]! short:left-2! short:gap-1! short:max-w-[220px]! z-25 pointer-events-none flex flex-col gap-1.5 max-w-[260px] sm:max-w-[340px]">
+          {hud.activeEvents.slice(0, isShortViewport ? 2 : 3).map((evt) => {
             const isElim = evt.type === 'elimination';
             const isObj = evt.type === 'objective_stage';
             const isHide = evt.type === 'hide' || evt.type === 'flush';
@@ -1911,7 +1932,7 @@ export default function App() {
             return (
               <div
                 key={evt.id}
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono border shadow-md backdrop-blur-md flex items-center gap-2 transition-all duration-300 ${
+                className={`px-2.5 py-1.5 short:px-1.5! short:py-0.5! short:text-[9px]! short:gap-1! rounded-lg text-[11px] font-mono border shadow-md backdrop-blur-md flex items-center gap-2 transition-all duration-300 ${
                   isElim
                     ? 'bg-red-950/85 border-red-500/60 text-red-200'
                     : isObj
