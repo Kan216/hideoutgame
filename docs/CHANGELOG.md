@@ -1,5 +1,14 @@
 # Changelog — CITY HIDEOUT
 
+## [2.4.0] — 2026-11-09
+### Added — 2.5D "tilted camera" view (optional)
+- New View switch: 🧊 button on the title screen and **Camera view: 2D / 2.5D** in the pause menu (saved per browser as `ch_view`; default stays 2D).
+- `src/game/render25d.ts`: ground layer drawn with a vertical squash (`TILT = 0.68`); buildings, fences and hedges become raised blocks with a lit-window front facade, a door, a side wall and a lifted roof that leans away from the camera centre (perspective parallax), plus south-east ground shadows.
+- Characters stay upright and are depth-sorted with the buildings (painter's algorithm), so they can walk behind them; your own character always shows as a faded outline through buildings.
+- Fog of war follows the tilted ground; buildings outside your line of sight are dimmed.
+- Snacks, floating texts, noise rings and smoke follow the tilt. Game rules, bots and server are unchanged (rendering only).
+- `main` branch created on GitHub (snapshot of v2.3.0).
+
 ## [2.3.0] — 2026-11-09
 ### Added — Burmese (မြန်မာ) language
 - `src/i18n.tsx`: English + Burmese dictionaries (~210 strings), `t()`, `useLang()`, `setLang()`, `rich()` for help texts; choice saved in `localStorage` (`ch_lang`), auto-selects Burmese when the browser language is `my`.

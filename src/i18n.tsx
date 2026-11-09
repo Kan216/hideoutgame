@@ -15,6 +15,9 @@ const en = {
   // language
   'lang.label': 'Language',
   'lang.switchTo': 'မြန်မာ',
+  'view.label': 'Camera view',
+  'view.2d': '2D',
+  'view.25d': '2.5D',
 
   // title screen
   'title.online': 'ONLINE',
@@ -252,6 +255,9 @@ export type I18nKey = keyof typeof en;
 const my: Record<I18nKey, string> = {
   'lang.label': 'ဘာသာစကား',
   'lang.switchTo': 'English',
+  'view.label': 'ကင်မရာ မြင်ကွင်း',
+  'view.2d': '2D',
+  'view.25d': '2.5D',
 
   'title.online': 'အွန်လိုင်း',
   'title.local': 'အော့ဖ်လိုင်း',

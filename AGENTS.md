@@ -15,6 +15,7 @@
 - **Bots**: `src/game/bots.ts` (A* navigation in `src/game/navigation.ts`). Bots obey the same perception rules as players — never read hidden state. Measure balance with `npm run simulate` (target ~50–70% seeker wins for 1v4 bot-only).
 
 ## 2. Technical Stack & Cross-Platform Targets
+- **Views**: classic top-down 2D (default) and an optional 2.5D tilted camera (`src/game/render25d.ts`, toggled by `ch_view`). 2.5D is rendering-only: world coordinates, rules and server stay 2D. Draw ground in a `scale(1, TILT)` pass, then depth-sort raised walls / characters / snacks by world `y`.
 - **Runtime & Engine**: TypeScript + HTML5 `Canvas2D` (`imageSmoothingEnabled = false`, integer camera translation) + React 19 UI Shell + Express + `ws` (WebSocket) Authoritative Server on Port `3000`.
 - **Supported Targets**:
   1. Browser (Desktop & Mobile Web).

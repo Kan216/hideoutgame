@@ -106,6 +106,8 @@ export interface FogOptions {
   map: MapConfig;
   objectives: ObjectiveConfig[];
   timeSec: number;
+  /** 2.5D view: vertical squash of the ground layer (1 = top-down). */
+  tilt?: number;
 }
 
 /**
@@ -136,6 +138,8 @@ export function drawFogOfWar(
   f.globalCompositeOperation = 'destination-out';
   f.save();
   f.translate(offsetX, offsetY);
+  const tilt = opts.tilt ?? 1;
+  if (tilt !== 1) f.scale(1, tilt);
 
   // 1. Line-of-sight cut-out with a soft radial falloff
   const poly = opts.polygon;
@@ -161,9 +165,9 @@ export function drawFogOfWar(
 
   // 3. Streetlight pools (ambient light, reveals the ground but players are still perception-gated)
   const left = -offsetX - 120;
-  const top = -offsetY - 120;
+  const top = (-offsetY - 120) / tilt;
   const right = -offsetX + width + 120;
-  const bottom = -offsetY + height + 120;
+  const bottom = (-offsetY + height + 120) / tilt;
   for (const l of opts.map.streetlights) {
     if (l.x < left || l.x > right || l.y < top || l.y > bottom) continue;
     const flicker = 0.42 + 0.04 * Math.sin(opts.timeSec * 7 + l.x * 0.13);

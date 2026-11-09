@@ -17,6 +17,8 @@ export interface EndOfRunStatsSnapshot {
 }
 
 interface PauseModalProps {
+  viewMode: '2d' | '25d';
+  onChangeView: (mode: '2d' | '25d') => void;
   muted: boolean;
   touchMode: 'auto' | 'on' | 'off';
   joystickSensitivity: number;
@@ -29,6 +31,8 @@ interface PauseModalProps {
 }
 
 export const PauseModal: React.FC<PauseModalProps> = ({
+  viewMode,
+  onChangeView,
   muted,
   touchMode,
   joystickSensitivity,
@@ -128,6 +132,24 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             >
               {t('pause.fullscreen')}
             </button>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <span className="text-xs font-medium text-slate-300">🧊 {t('view.label')}</span>
+            <div className="flex gap-1.5">
+              {(['2d', '25d'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => onChangeView(m)}
+                  className={`min-h-[44px] px-3 py-2 rounded-lg text-xs font-bold border cursor-pointer ${
+                    viewMode === m ? 'bg-sky-600 text-white border-sky-300' : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  {m === '2d' ? t('view.2d') : t('view.25d')}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">

@@ -27,6 +27,7 @@ import {
   attemptSprint,
   attemptUsePower,
   filterStateForViewer,
+  hasLineOfSight,
   POWER_INFO,
   PowerKind,
 } from './game/rules';
@@ -53,6 +54,7 @@ import {
 import { soundFX } from './game/sound';
 import { t, useLang, setLang, eventText, winReasonText, powerName, powerSnack, powerDesc, localizeActions } from './i18n';
 import { stepBotAI } from './game/bots';
+import { TILT, wallHeight, drawWall25D, drawWallShadow25D } from './game/render25d';
 import { MobileControls } from './components/MobileControls';
 import { LobbyModal } from './components/LobbyModal';
 import {
@@ -231,6 +233,23 @@ export default function App() {
   );
   const cameraRef = useRef<{ x: number; y: number } | null>(null);
   const fogPolyRef = useRef<number[]>([]);
+  // Camera view: classic top-down 2D or the tilted 2.5D view (saved per browser)
+  const [viewMode, setViewMode] = useState<'2d' | '25d'>(() => {
+    try {
+      return localStorage.getItem('ch_view') === '25d' ? '25d' : '2d';
+    } catch {
+      return '2d';
+    }
+  });
+  const view25dRef = useRef(viewMode === '25d');
+  useEffect(() => {
+    view25dRef.current = viewMode === '25d';
+    try {
+      localStorage.setItem('ch_view', viewMode);
+    } catch {
+      /* ignore */
+    }
+  }, [viewMode]);
   const prevHeldPowerRef = useRef<PowerKind | null>(null);
   // Dev-only test hook (stripped from production builds): lets Playwright inspect/modify the live match
   if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -1296,8 +1315,10 @@ export default function App() {
         cameraShakeRef.current = Math.max(0, cameraShakeRef.current - dt * 1.8);
       }
 
+      // 2.5D "tilted camera" view squashes the ground vertically and raises walls as blocks
+      const tilt = view25dRef.current ? TILT : 1;
       const offsetX = Math.round(canvas.width / 2 - camX);
-      const offsetY = Math.round(canvas.height / 2 - camY);
+      const offsetY = Math.round(canvas.height / 2 - camY * tilt);
       ctx.translate(offsetX, offsetY);
 
       // Hiding objects wobble when something rustles or bursts out of them
@@ -1314,33 +1335,30 @@ export default function App() {
         }
       }
 
-      drawPixelMap(ctx, map, viewState, myId, timeSec, { wobbleSpotIds });
       const objectives = getMapObjectives(map);
-      drawTransmitLinks(ctx, viewState, objectives, posOf, timeSec);
-      if (inMatch) {
-        drawMines(ctx, viewState.mines, timeSec);
-        drawPowerUps(ctx, viewState.powerUps, timeSec);
-      }
-
       const localP = viewState.players[myId];
       const viewerRole = localP?.role || 'hider';
       const sortedPlayers = Object.values(viewState.players)
         .filter((p) => !p.masked)
         .sort((a, b) => posOf(a).y - posOf(b).y);
-      for (const p of sortedPlayers) {
+
+      const drawOnePlayer = (p: PlayerState, ySquash: number, alphaMul = 1) => {
         const pos = posOf(p);
-        const drawP = pos === p ? p : { ...p, x: pos.x, y: pos.y };
+        const drawP = { ...p, x: pos.x, y: pos.y * ySquash };
         const cloaked = (p.cloakRemaining ?? 0) > 0;
-        if (cloaked) {
+        if (cloaked || alphaMul !== 1) {
           ctx.save();
-          ctx.globalAlpha = 0.32 + 0.1 * Math.sin(timeSec * 9);
+          ctx.globalAlpha = (cloaked ? 0.32 + 0.1 * Math.sin(timeSec * 9) : 1) * alphaMul;
         }
         drawPlayerSprite(ctx, drawP, p.id === myId, viewerRole, distWalkedMapRef.current[p.id] || 0);
-        if (cloaked) ctx.restore();
-        drawPlayerStatusFx(ctx, p, pos.x, pos.y, timeSec);
+        if (cloaked || alphaMul !== 1) ctx.restore();
+        if (alphaMul === 1) drawPlayerStatusFx(ctx, p, pos.x, pos.y * ySquash, timeSec);
+      };
 
-        // Footstep dust puffs while moving
+      // Footstep dust puffs while moving (world space)
+      for (const p of sortedPlayers) {
         if (inMatch && p.alive && !p.hiddenInSpotId && Math.hypot(p.vx, p.vy) > 40) {
+          const pos = posOf(p);
           const walked = distWalkedMapRef.current[p.id] || 0;
           const stepKey = `__dust_${p.id}`;
           const lastDust = (distWalkedMapRef.current[stepKey] as number | undefined) ?? 0;
@@ -1359,12 +1377,10 @@ export default function App() {
         }
       }
 
-      stepAndDrawParticles(ctx, dt);
-      ctx.restore();
-
-      // 2b. Fog of war: only living players in an active match see through their own eyes
       const viewer = st.players[myId];
-      if (inMatch && viewer && viewer.alive && followTarget && followTarget.id === myId) {
+      const fogActive = inMatch && !!viewer && viewer.alive && !!followTarget && followTarget.id === myId;
+      const drawFog = () => {
+        if (!fogActive || !viewer) return;
         const vp = posOf(viewer);
         const radius =
           viewer.role === 'seeker' ? st.config.seekerVisionRadius ?? 250 : st.config.hiderVisionRadius ?? 340;
@@ -1378,17 +1394,88 @@ export default function App() {
           map,
           objectives,
           timeSec,
+          tilt,
         });
+      };
+
+      if (tilt === 1) {
+        // ───── Classic top-down 2D ─────
+        drawPixelMap(ctx, map, viewState, myId, timeSec, { wobbleSpotIds });
+        drawTransmitLinks(ctx, viewState, objectives, posOf, timeSec);
+        if (inMatch) {
+          drawMines(ctx, viewState.mines, timeSec);
+          drawPowerUps(ctx, viewState.powerUps, timeSec);
+        }
+        for (const p of sortedPlayers) drawOnePlayer(p, 1);
+        stepAndDrawParticles(ctx, dt);
+        ctx.restore();
+        drawFog();
+      } else {
+        // ───── 2.5D tilted camera ─────
+        // (a) ground layer, squashed: floors, roads, props, hiding objects, beacons, wall shadows
+        ctx.save();
+        ctx.scale(1, tilt);
+        drawPixelMap(ctx, map, viewState, myId, timeSec, {
+          wobbleSpotIds,
+          skipSolidWalls: true,
+          wallShadow: drawWallShadow25D,
+        });
+        drawTransmitLinks(ctx, viewState, objectives, posOf, timeSec);
+        if (inMatch) drawMines(ctx, viewState.mines, timeSec);
+        stepAndDrawParticles(ctx, dt);
+        ctx.restore();
+        ctx.restore();
+
+        // (b) fog of war on the ground only
+        drawFog();
+
+        // (c) depth-sorted upright layer: raised walls, characters and snacks (painter's algorithm)
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        type Item = { y: number; draw: () => void };
+        const items: Item[] = [];
+        const vp = viewer ? posOf(viewer) : null;
+        const radius = viewer?.role === 'seeker' ? st.config.seekerVisionRadius ?? 250 : st.config.hiderVisionRadius ?? 340;
+        for (const w of map.walls) {
+          if (w.kind === 'water_canal' || wallHeight(w) <= 0) continue;
+          let dim = 0;
+          if (fogActive && vp) {
+            // Visible when the viewer can see some point just in front of the wall
+            const fy = w.y + w.height + 4;
+            const samples = [w.x + 6, w.x + w.width / 2, w.x + w.width - 6];
+            const seen = samples.some(
+              (sx) => Math.hypot(sx - vp.x, fy - vp.y) <= radius + 40 && hasLineOfSight(vp.x, vp.y, sx, fy, map.walls)
+            );
+            dim = seen ? 0 : viewer?.hiddenInSpotId ? 0.78 : 0.68;
+          }
+          items.push({ y: w.y + w.height, draw: () => drawWall25D(ctx, w, map, timeSec, dim, camX) });
+        }
+        for (const p of sortedPlayers) items.push({ y: posOf(p).y, draw: () => drawOnePlayer(p, tilt) });
+        if (inMatch) {
+          for (const pu of viewState.powerUps ?? []) {
+            items.push({ y: pu.y, draw: () => drawPowerUps(ctx, [{ ...pu, y: pu.y * tilt }], timeSec) });
+          }
+        }
+        items.sort((a, b) => a.y - b.y);
+        for (const it of items) it.draw();
+
+        // (d) X-ray outline: you never lose your own character behind a building
+        const me = viewState.players[myId];
+        if (me && me.alive && !me.hiddenInSpotId && !me.masked) drawOnePlayer(me, tilt, 0.35);
+        ctx.restore();
       }
 
       // 2c. World-space overlays that must read through the darkness
       ctx.save();
       ctx.translate(offsetX, offsetY);
       if (inMatch) {
+        ctx.save();
+        if (tilt !== 1) ctx.scale(1, tilt);
         drawSmokes(ctx, viewState.smokes, timeSec);
         drawNoisePings(ctx, viewState.noisePings, timeSec);
+        ctx.restore();
       }
-      stepAndDrawFloatingTexts(ctx, dt);
+      stepAndDrawFloatingTexts(ctx, dt, tilt);
       ctx.restore();
 
       if (flashRef.current.amount > 0) {
@@ -1517,6 +1604,22 @@ export default function App() {
                 className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-violet-950/80 hover:bg-violet-900 text-violet-100 border border-violet-400/60 font-bold text-xs transition-colors cursor-pointer whitespace-nowrap"
               >
                 🌐 {t('lang.switchTo')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFX.playUiTap();
+                  setViewMode(viewMode === '25d' ? '2d' : '25d');
+                }}
+                aria-label={t('view.label')}
+                aria-pressed={viewMode === '25d'}
+                className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl border font-bold text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                  viewMode === '25d'
+                    ? 'bg-sky-500/25 border-sky-300 text-sky-100'
+                    : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                🧊 {viewMode === '25d' ? t('view.25d') : t('view.2d')}
               </button>
             </div>
           </div>
@@ -2239,6 +2342,8 @@ export default function App() {
       {/* Pause Modal ('paused') */}
       {shellState === 'paused' && (
         <PauseModal
+          viewMode={viewMode}
+          onChangeView={setViewMode}
           muted={muted}
           touchMode={touchMode}
           joystickSensitivity={joystickSensitivity}

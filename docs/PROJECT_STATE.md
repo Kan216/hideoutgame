@@ -1,6 +1,8 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
+**v2.4.0**: optional 2.5D tilted-camera view (`src/game/render25d.ts`), toggle on title + pause menu.
+
 **v2.3.0**: English / Burmese (မြန်မာ) language switch (`src/i18n.tsx`).
 
 **v2.2.0**: `/stats` player & match stats dashboard + `/api/stats`. 29/29 tests.

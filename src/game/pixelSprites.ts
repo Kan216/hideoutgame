@@ -123,7 +123,7 @@ export function spawnFloatingWorldText(
   t.color = color;
 }
 
-export function stepAndDrawFloatingTexts(ctx: CanvasRenderingContext2D, dt: number) {
+export function stepAndDrawFloatingTexts(ctx: CanvasRenderingContext2D, dt: number, yScale: number = 1) {
   ctx.save();
   ctx.font = 'bold 11px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
@@ -139,14 +139,16 @@ export function stepAndDrawFloatingTexts(ctx: CanvasRenderingContext2D, dt: numb
     t.y -= dt * 28; // float upward smoothly
     const alpha = Math.min(1, t.life / 0.35);
     ctx.globalAlpha = alpha;
+    // 2.5D view: world y is squashed by yScale (text itself stays upright)
+    const ty = Math.round(t.y * yScale);
     // draw crisp dark drop shadow
     ctx.fillStyle = '#090D16';
-    ctx.fillText(t.text, Math.round(t.x) + 1, Math.round(t.y) + 1);
-    ctx.fillText(t.text, Math.round(t.x) - 1, Math.round(t.y) + 1);
-    ctx.fillText(t.text, Math.round(t.x), Math.round(t.y) + 2);
+    ctx.fillText(t.text, Math.round(t.x) + 1, ty + 1);
+    ctx.fillText(t.text, Math.round(t.x) - 1, ty + 1);
+    ctx.fillText(t.text, Math.round(t.x), ty + 2);
     // draw colored text
     ctx.fillStyle = t.color;
-    ctx.fillText(t.text, Math.round(t.x), Math.round(t.y));
+    ctx.fillText(t.text, Math.round(t.x), ty);
   }
   ctx.restore();
 }
@@ -210,6 +212,10 @@ function getSpriteImage(key: SpriteAssetKey): HTMLImageElement | null {
 export interface MapDrawFx {
   /** Hiding spots that should visibly wobble (rustling / just flushed). */
   wobbleSpotIds?: Set<string>;
+  /** 2.5D view: solid walls are drawn later as raised blocks (only their ground shadow here). */
+  skipSolidWalls?: boolean;
+  /** Ground shadow painter for skipped walls (2.5D). */
+  wallShadow?: (ctx: CanvasRenderingContext2D, w: WallRect) => void;
 }
 
 export function drawPixelMap(
@@ -384,6 +390,10 @@ export function drawPixelMap(
 
   // 4. Cutaway PixelSpaces Buildings, Fences & Canals
   for (const w of map.walls) {
+    if (fx.skipSolidWalls && w.kind !== 'water_canal') {
+      fx.wallShadow?.(ctx, w);
+      continue;
+    }
     drawWallBlock(ctx, w, map, timeSec);
   }
 
@@ -453,7 +463,7 @@ export function drawPixelMap(
   ctx.strokeRect(32, 32, map.width - 64, map.height - 64);
 }
 
-function drawWallBlock(
+export function drawWallBlock(
   ctx: CanvasRenderingContext2D,
   w: WallRect,
   map: MapConfig,

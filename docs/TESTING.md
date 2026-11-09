@@ -20,6 +20,9 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 ### Balance simulation
 `npm run simulate [matchesPerMap] [seekerCount]` — headless bot-vs-bot. Latest (30/map, 1v4): Downtown 87%, Harbor 63%, Modern 83%, Mystic 67% seeker wins (≈75% overall, ≈100s matches). 2v5 bot-only is still 100% seeker — see IMPROVEMENT_PLAN follow-ups.
 
+### v2.4.0 2.5D view
+- Playwright with `ch_view=25d`: desktop 1280×720 and phone 853×393 matches at 61–62 fps, 0 console errors; raised buildings with side walls/parallax, fog dimming of unseen buildings, player standing behind Precinct HQ is occluded and the local x-ray outline shows. 2D default unchanged (61 fps).
+
 ### v2.3.0 Burmese language
 - Playwright with `ch_lang=my`: title, how-to-play, in-game HUD + action prompt + toasts, pause menu (language toggle), phone landscape controls — Burmese renders with Noto Sans Myanmar, no layout overflow, 0 console errors; English default unchanged.
 
