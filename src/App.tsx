@@ -1953,6 +1953,9 @@ export default function App() {
             </div>
           </div>
 
+          {/* Bottom-anchored group: ability strip + action prompt + spectator banner.
+              (Grouped so the HUD's justify-between keeps them at the bottom, not mid-screen.) */}
+          <div className="flex flex-col items-center w-full">
           {/* Hider ability strip (Desktop): sprint + catch-breath cooldown */}
           {!showMobileControls && hud.alive && hud.role === 'hider' && !hud.hiddenInSpotId && (
             <div className="pointer-events-none mx-auto mb-1.5 flex items-center gap-2 text-[11px] font-mono">
@@ -2057,6 +2060,7 @@ export default function App() {
               </div>
             </div>
           )}
+          </div>
         </div>
       )}
 

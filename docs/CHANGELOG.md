@@ -1,5 +1,9 @@
 # Changelog — CITY HIDEOUT
 
+## [2.2.1] — 2026-11-09
+### Fixed
+- Desktop HUD: the hider ability strip (sprint / power / shield chips) and the spectator banner floated in the middle of the screen because the HUD column used `justify-between` across separate children; they are now grouped with the action prompt at the bottom.
+
 ## [2.2.0] — 2026-11-09
 ### Added — player & match stats dashboard
 - `/stats` live dashboard (auto-refresh 15s, light/dark, phone-friendly): online now, playing now (online vs bots), active rooms, uptime; 24h players chart with hover tooltip + table view; today & all-time unique players, matches, hider win rate, average match length, peaks; matches per map; last 7 days table.
