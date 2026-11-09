@@ -11,7 +11,7 @@
   - **Mystic Woods & Ancient Ruins**: Overgrown ruins with 20 nature and stone hiding spots.
 - **Authoritative Match Rules**:
   - **10-Second Hider Head Start**: Seekers are locked inside the Precinct Deploy Zone while Hiders scatter and hide.
-  - **1.2× Seeker Speed Ratio**: Hiders move at 100% (`160 px/s`); Seekers move at 120% (`192 px/s`).
+  - **1.08× Seeker Speed Ratio**: Hiders move at 100% (`160 px/s`); Seekers move at 108% (`≈173 px/s`) — only slightly faster.
   - **Data-Driven Hiding & 15s Protection**: Single-capacity hiding objects (`1 hider per object`). Hiders are protected from direct elimination while hidden, up to a maximum duration of 15 seconds.
   - **Close-Range Catch & Hiding Inspection**: Seekers eliminate hiders in the open or inspect hiding objects to force out and eliminate hidden occupants.
   - **3-Stage Escape Beacon Objective**: Hiders win by holding the City-Center Beacon for **3 stages × 15 uninterrupted seconds** (`45s` total). Interruption resets only the current stage.

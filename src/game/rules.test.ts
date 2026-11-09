@@ -76,10 +76,11 @@ function seedTwoPlayers() {
   return state;
 }
 
-test('Movement tests: Seeker moves at 1.2x Hider speed and respects walls and head-start lock', () => {
+test('Movement tests: Seeker is slightly faster than Hiders (config multiplier) and respects walls and head-start lock', () => {
   const hiderSpeed = getPlayerSpeed('hider', DEFAULT_MATCH_CONFIG);
   const seekerSpeed = getPlayerSpeed('seeker', DEFAULT_MATCH_CONFIG);
-  assert.equal(seekerSpeed, hiderSpeed * 1.2);
+  assert.equal(seekerSpeed, hiderSpeed * DEFAULT_MATCH_CONFIG.seekerSpeedMultiplier);
+  assert.ok(seekerSpeed > hiderSpeed && seekerSpeed < hiderSpeed * 1.15, 'seeker is only a little faster');
 
   const state = seedTwoPlayers();
   const map = MAPS[state.config.mapId];

@@ -1,5 +1,10 @@
 # Changelog — CITY HIDEOUT
 
+## [2.5.0] — 2026-11-09
+### Changed
+- **Seeker speed 1.2× → 1.08×** (≈173 px/s vs hiders' 160 px/s): seekers are only slightly faster. Bot-only 1v4 balance (30 matches/map): seeker win rate 62% → **48%** (Downtown 53, Harbor 53, Modern 43, Mystic 43), avg match ≈155s. UI/help texts updated in English and Burmese.
+- **Joystick moved away from the screen corner**: the inline safe-area padding (12px) was overriding the padding classes. Now ≥28px left / 20px bottom (+ notch/gesture-bar insets) plus a small margin — joystick sits 44px from the left and 28px from the bottom on landscape phones.
+
 ## [2.4.0] — 2026-11-09
 ### Added — 2.5D "tilted camera" view (optional)
 - New View switch: 🧊 button on the title screen and **Camera view: 2D / 2.5D** in the pause menu (saved per browser as `ch_view`; default stays 2D).

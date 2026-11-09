@@ -101,9 +101,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     <div
       className="fixed inset-0 pointer-events-none z-30 flex items-end justify-between px-3 pb-2.5 sm:px-8 sm:pb-6"
       style={{
-        paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))',
-        paddingLeft: 'max(0.75rem, env(safe-area-inset-left, 0px))',
-        paddingRight: 'max(0.75rem, env(safe-area-inset-right, 0px))',
+        // Keep thumbs clear of rounded screen corners and the gesture bar
+        paddingBottom: 'max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))',
+        paddingLeft: 'max(1.75rem, calc(env(safe-area-inset-left, 0px) + 1rem))',
+        paddingRight: 'max(1.25rem, calc(env(safe-area-inset-right, 0px) + 0.75rem))',
       }}
       aria-label="Mobile touch controls"
     >
@@ -120,7 +121,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           (knobOffset.y / maxRadius) * 100
         )}% Y`}
         tabIndex={-1}
-        className="pointer-events-auto relative w-24 h-24 sm:w-28 sm:h-28 short:w-[88px]! short:h-[88px]! rounded-full bg-[#090D16]/85 border-2 border-slate-600/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] flex items-center justify-center touch-none select-none"
+        className="pointer-events-auto relative ml-1 mb-1 sm:ml-2 sm:mb-2 short:ml-4! short:mb-2! w-24 h-24 sm:w-28 sm:h-28 short:w-[88px]! short:h-[88px]! rounded-full bg-[#090D16]/85 border-2 border-slate-600/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] flex items-center justify-center touch-none select-none"
       >
         {/* Crosshair directional ticks */}
         <div className="w-16 h-0.5 bg-slate-700/50 absolute pointer-events-none" />

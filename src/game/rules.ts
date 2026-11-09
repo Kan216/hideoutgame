@@ -71,7 +71,7 @@ export interface MatchConfig {
   mapId: MapId;
   seekerCount: 1 | 2;
   hiderBaseSpeed: number; // Default 160 px/s (100%)
-  seekerSpeedMultiplier: number; // Default 1.2 (120%)
+  seekerSpeedMultiplier: number; // Default 1.08 (108%)
   headStartSeconds: number; // Default 10s
   maxHideDurationSeconds: number; // Default 15s max hide time in a spot
   objectiveTotalStages: number; // Default 3
@@ -236,7 +236,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   mapId: 'downtown_plaza',
   seekerCount: 1,
   hiderBaseSpeed: 160,
-  seekerSpeedMultiplier: 1.2,
+  seekerSpeedMultiplier: 1.08,
   headStartSeconds: 10,
   maxHideDurationSeconds: 15,
   objectiveTotalStages: 3,
