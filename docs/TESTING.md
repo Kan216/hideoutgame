@@ -20,6 +20,10 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 ### Balance simulation
 `npm run simulate [matchesPerMap] [seekerCount]` — headless bot-vs-bot. Latest (30/map, 1v4): Downtown 87%, Harbor 63%, Modern 83%, Mystic 67% seeker wins (≈75% overall, ≈100s matches). 2v5 bot-only is still 100% seeker — see IMPROVEMENT_PLAN follow-ups.
 
+### v2.2.0 stats
+- `src/server/statsTracker.test.ts` (3): counting & win rate & averages, abandoned matches (restart/disconnect/8-min timeout), 24h timeline cap + save/reload.
+- E2E against the dev server with `STATS_KEY`: 401 without key; `?autostart=1` local match counted live (report queued until WS ready); quitting → "quit early"; forced finish → seeker win with duration; online room match counted. Dashboard rendered at 1280×900 (light) and 390×844 (dark) with real and sample data: no horizontal overflow, 0 console errors.
+
 ### v2.1.0 power-ups (Tests 21–26)
 - Snack spawning (capped, wall-free) & eating (hiders only), cloak perception + expiry, shield block + seeker stun, mines (2 charges, arming delay, hidden from seekers, stun), smoke blocks sight + fades, speed boost & empty-slot / seeker rejection.
 - Playwright desktop 1280×720 + phone 853×393: eat a snack → HUD chip / mobile power button; `Q` / tap activates shield; 0 console errors. Render harness screenshot of all snack/power visuals.

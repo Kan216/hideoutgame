@@ -1,5 +1,12 @@
 # Changelog — CITY HIDEOUT
 
+## [2.2.0] — 2026-11-09
+### Added — player & match stats dashboard
+- `/stats` live dashboard (auto-refresh 15s, light/dark, phone-friendly): online now, playing now (online vs bots), active rooms, uptime; 24h players chart with hover tooltip + table view; today & all-time unique players, matches, hider win rate, average match length, peaks; matches per map; last 7 days table.
+- `/api/stats` JSON endpoint. Optional `STATS_KEY` env var protects both; `STATS_FILE` sets where totals are saved.
+- Single-player matches are reported by the client (`report_local_match`), queued until the server connection is ready; quits/restarts/disconnects count as abandoned, not wins.
+- 3 new unit tests (29 total).
+
 ## [2.1.0] — 2026-11-09
 ### Added — edible hider powers
 - Snacks spawn around the city (max 4, every 9s); hiders eat one by walking over it and activate it with `Q` or the mobile power button.

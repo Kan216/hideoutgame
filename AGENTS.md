@@ -27,6 +27,11 @@
 - **Server Authority**: `/server.ts` runs the authoritative 25Hz tick loop (`stepAuthoritativeMatch`) and validates all client actions (`move_input`, `hide`, `exit_hide`, `inspect`, `eliminate`, `hold_objective`, `sprint`, `use_power`). Never allow clients to claim arbitrary eliminations or instant objective completions.
 - **Guest Play & Identity**: Prominent **Play as Guest** flow requiring zero email, password, or third-party login. Guest display names are validated against reserved system identities (`admin`, `system`, `server`, `moderator`, etc.). Server issues cryptographic guest session tokens (`ch_guest_token`).
 
+## 3b. Stats & Monitoring
+- `src/server/statsTracker.ts` (`StatsTracker`): live counts, per-day (UTC, 7 days) and all-time totals, 24h per-minute timeline. Counts only — never store names or other personal data.
+- Server hooks: WS connect/close, `auth_guest` (anonymous unique players), online `start_match` / finish (`recordRoomMatchIfFinished`, exactly once; abandoned when the room is restarted/emptied/returned to lobby), and the client-reported `report_local_match` (`start`/`end`) for single-player games.
+- `GET /api/stats` (JSON) and `GET /stats` (dashboard, `src/server/statsPage.ts`). Protected by `?key=` when the `STATS_KEY` env var is set. `STATS_FILE` sets the persistence path (default `data/stats.json`, git-ignored).
+
 ## 4. Mobile Controls & UX Rules
 - Virtual thumb joystick on the bottom-left and contextual interaction button(s) on the bottom-right (`/src/components/MobileControls.tsx`).
 - Phones in landscape match `sm:` width breakpoints but are short: every HUD/mobile-control size set with `sm:` must also get a compact `short:*!` override (variant defined in `src/index.css`, `max-height: 520px`).
@@ -34,7 +39,7 @@
 
 ## 5. Testing & How to Resume Work
 1. Read `/AGENTS.md` and `/docs/PROJECT_STATE.md`.
-2. Run unit tests first: `node --test src/game/rules.test.ts` (26 tests). For balance changes also run `npm run simulate`.
+2. Run unit tests first: `node --test src/game/rules.test.ts` (29 tests incl. `src/server/statsTracker.test.ts`; run all with `npm test`). For balance changes also run `npm run simulate`.
 3. Verify compilation: `npm run lint` and `npm run build`.
 4. Verify live browser & two-client multiplayer behavior via `playwright-cli`.
 5. Update `/docs/PROJECT_STATE.md`, `/docs/TESTING.md`, and `/docs/CHANGELOG.md` after every task.

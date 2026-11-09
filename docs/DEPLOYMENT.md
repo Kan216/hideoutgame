@@ -34,3 +34,8 @@ Because CITY HIDEOUT uses standard HTML5 `Canvas2D`, pointer events, and WebSock
 - **Health check path**: `/healthz`
 - Keep `bun.lock` and `package-lock.json` in sync with `package.json` (run `bun install` / `npm install` after changing dependencies), otherwise frozen installs fail with *"lockfile had changes, but lockfile is frozen"*.
 
+## Stats dashboard
+- Open `https://<your-app>/stats` (add `?key=<STATS_KEY>` when the env var is set). JSON: `/api/stats`.
+- Env vars: `STATS_KEY` (optional password for the dashboard) and `STATS_FILE` (save path, default `data/stats.json`).
+- On Render's free plan the disk is wiped on every deploy/restart, so all-time totals start over then. For permanent history, attach a Render persistent disk (paid) and point `STATS_FILE` at it.
+

@@ -24,6 +24,9 @@ import {
 } from './src/game/rules.ts';
 import { MAPS } from './src/game/maps.ts';
 import { stepBotAI } from './src/game/bots.ts';
+import { StatsTracker } from './src/server/statsTracker.ts';
+import type { Winner } from './src/server/statsTracker.ts';
+import { renderStatsPage } from './src/server/statsPage.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,11 +45,50 @@ interface RoomInstance {
   clients: Map<string, WebSocket>; // playerId -> ws
   inputs: Map<string, { ix: number; iy: number }>;
   lastUpdatedAt: number;
+  /** True while a started match has not yet been recorded as finished in the stats. */
+  statsMatchOpen?: boolean;
 }
 
 const guestSessionsByToken = new Map<string, GuestSession>();
 const guestSessionsById = new Map<string, GuestSession>();
 const rooms = new Map<string, RoomInstance>();
+
+// ───────── Player & match statistics ─────────
+// STATS_FILE: where totals are saved (default ./data/stats.json; note Render's free disk is wiped on redeploy).
+// STATS_KEY:  optional secret; when set, /stats and /api/stats require ?key=<STATS_KEY>.
+const stats = new StatsTracker(
+  process.env.STATS_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'stats.json')
+);
+const STATS_KEY = process.env.STATS_KEY || '';
+let openConnections = 0;
+
+function liveCounts() {
+  let inOnlineMatch = 0;
+  let activeRooms = 0;
+  for (const room of rooms.values()) {
+    const lc = room.state.lifecycle;
+    if (lc === 'HIDER_HEAD_START' || lc === 'SEEKER_RELEASED' || lc === 'MATCH_ACTIVE') {
+      activeRooms++;
+      for (const id of room.clients.keys()) {
+        const p = room.state.players[id];
+        if (p && !p.isBot) inOnlineMatch++;
+      }
+    }
+  }
+  return { online: openConnections, inOnlineMatch, rooms: rooms.size, activeRooms };
+}
+
+/** Record a finished (or abandoned) online match exactly once. */
+function recordRoomMatchIfFinished(room: RoomInstance, abandoned = false) {
+  if (!room.statsMatchOpen) return;
+  if (abandoned) {
+    room.statsMatchOpen = false;
+    stats.matchFinished(null, room.state.elapsedMatchSeconds);
+  } else if (room.state.lifecycle === 'MATCH_COMPLETED') {
+    room.statsMatchOpen = false;
+    stats.matchFinished(room.state.winner as Winner, room.state.elapsedMatchSeconds);
+  }
+}
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -220,6 +262,27 @@ async function startServer() {
     });
   });
 
+  const statsAuthorized = (req: express.Request) =>
+    !STATS_KEY || req.query.key === STATS_KEY || req.get('x-stats-key') === STATS_KEY;
+
+  app.get('/api/stats', (req, res) => {
+    if (!statsAuthorized(req)) {
+      res.status(401).json({ error: 'Stats key required.' });
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json(stats.snapshot(liveCounts()));
+  });
+
+  app.get('/stats', (req, res) => {
+    if (!statsAuthorized(req)) {
+      res.status(401).type('text/plain').send('Stats key required: open /stats?key=YOUR_STATS_KEY');
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    res.type('html').send(renderStatsPage());
+  });
+
   app.get('/healthz', (_req, res) => {
     res.json({
       status: 'ok',
@@ -233,8 +296,13 @@ async function startServer() {
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
+  let connectionSeq = 0;
   wss.on('connection', (ws) => {
     let boundSession: GuestSession | null = null;
+    openConnections++;
+    const connectionKey = `conn_${++connectionSeq}`;
+    let lastLocalStartAt = 0;
+    const statsKey = () => boundSession?.playerId ?? connectionKey;
     let messageCountInWindow = 0;
     let currentSecondWindow = Math.floor(Date.now() / 1000);
 
@@ -275,8 +343,24 @@ async function startServer() {
           return;
         }
 
+        // Single-player (bot) matches run in the browser; the client reports start/end for stats only.
+        if (msg.type === 'report_local_match') {
+          const now = Date.now();
+          const mapId = String(msg.mapId || '');
+          if (msg.phase === 'start' && MAPS[mapId as keyof typeof MAPS]) {
+            if (now - lastLocalStartAt < 2000) return; // ignore spam
+            lastLocalStartAt = now;
+            stats.localMatchStarted(statsKey(), mapId, now);
+          } else if (msg.phase === 'end') {
+            const winner: Winner = msg.winner === 'hiders' || msg.winner === 'seekers' ? msg.winner : null;
+            stats.localMatchEnded(statsKey(), winner, Number(msg.durationSec) || 0, now);
+          }
+          return;
+        }
+
         if (msg.type === 'auth_guest') {
           boundSession = createOrResumeGuestSession(msg.token, msg.displayName);
+          stats.guestSeen(boundSession.playerId);
           ws.send(
             JSON.stringify({
               type: 'guest_authenticated',
@@ -379,6 +463,7 @@ async function startServer() {
             delete room.state.players[boundSession.playerId];
             boundSession.currentRoomCode = null;
             if (room.clients.size === 0) {
+              recordRoomMatchIfFinished(room, true);
               rooms.delete(room.state.roomCode);
             } else {
               if (room.state.hostId === boundSession.playerId) {
@@ -425,13 +510,17 @@ async function startServer() {
             );
             return;
           }
+          recordRoomMatchIfFinished(room, true); // restarting mid-match counts the old one as abandoned
           startAuthoritativeMatch(state, msg.preferredHostRole);
+          room.statsMatchOpen = true;
+          stats.matchStarted('online', state.config.mapId);
           broadcastRoomState(room);
           return;
         }
 
         if (msg.type === 'return_to_lobby') {
           if (state.hostId !== boundSession.playerId) return;
+          recordRoomMatchIfFinished(room, state.lifecycle !== 'MATCH_COMPLETED');
           state.lifecycle = 'LOBBY';
           state.winner = null;
           state.winReason = null;
@@ -478,6 +567,7 @@ async function startServer() {
           } else if (action === 'use_power') {
             attemptUsePower(state, boundSession.playerId, Date.now());
           }
+          recordRoomMatchIfFinished(room);
           broadcastRoomState(room);
         }
       } catch (err) {
@@ -486,6 +576,8 @@ async function startServer() {
     });
 
     ws.on('close', () => {
+      openConnections = Math.max(0, openConnections - 1);
+      stats.connectionGone(statsKey());
       if (boundSession && boundSession.currentRoomCode) {
         const room = rooms.get(boundSession.currentRoomCode);
         if (room) {
@@ -533,6 +625,7 @@ async function startServer() {
           }
         }
         stepAuthoritativeMatch(state, dt, now);
+        recordRoomMatchIfFinished(room);
         broadcastRoomState(room);
       }
     }
@@ -543,6 +636,7 @@ async function startServer() {
     const now = Date.now();
     for (const [code, room] of rooms.entries()) {
       if (room.clients.size === 0 && now - room.lastUpdatedAt > 120_000) {
+        recordRoomMatchIfFinished(room, true);
         rooms.delete(code);
       }
     }
@@ -561,6 +655,19 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Stats: one timeline sample + save per minute, and a final save on shutdown
+  stats.sample(liveCounts());
+  setInterval(() => {
+    stats.sample(liveCounts());
+    stats.save();
+  }, 60_000);
+  const saveAndExit = () => {
+    stats.save();
+    process.exit(0);
+  };
+  process.once('SIGTERM', saveAndExit);
+  process.once('SIGINT', saveAndExit);
 
   // Hosting platforms (Render, Railway, Fly…) inject PORT; default to 3000 locally.
   const PORT = Number(process.env.PORT) || 3000;

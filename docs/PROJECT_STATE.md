@@ -1,6 +1,8 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
+**v2.2.0**: `/stats` player & match stats dashboard + `/api/stats`. 29/29 tests.
+
 **v2.1.0**: edible hider powers (cloak, shield, mines, smoke, speed). 26/26 tests.
 
 **v2.0.1**: compact HUD for short (landscape phone) screens via the `short` Tailwind variant.

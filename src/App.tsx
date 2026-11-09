@@ -357,6 +357,24 @@ export default function App() {
     spectatedIdRef.current = spectatedId;
   }, [spectatedId]);
 
+  /** Anonymous stats: tell the server when a single-player (bots) match starts/ends. */
+  const reportLocalMatch = useCallback(
+    (phase: 'start' | 'end', extra: { mapId?: string; winner?: string | null; durationSec?: number } = {}) => {
+      const payload = JSON.stringify({ type: 'report_local_match', phase, ...extra });
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        // Not connected yet (e.g. ?autostart=1 or the server is waking up): keep only what still matters
+        if (phase === 'start') pendingLocalReportsRef.current = [payload];
+        else if (pendingLocalReportsRef.current.length) pendingLocalReportsRef.current = []; // started+ended offline → nothing to report
+        return;
+      }
+      ws.send(payload);
+    },
+    []
+  );
+  const pendingLocalReportsRef = useRef<string[]>([]);
+  const localMatchLiveRef = useRef(false);
+
   const sendEmote = useCallback((text: string) => {
     const myId = guestIdRef.current;
     if (isOnlineMatchRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
@@ -509,6 +527,9 @@ export default function App() {
             localStorage.setItem('ch_guest_id', newId);
             localStorage.setItem('ch_guest_token', data.token);
             localStorage.setItem('ch_guest_name', data.displayName);
+            // Flush stats reports queued before the connection was ready
+            for (const payload of pendingLocalReportsRef.current) ws.send(payload);
+            pendingLocalReportsRef.current = [];
           } else if (data.type === 'error') {
             setErrorBanner(data.message);
             setTimeout(() => setErrorBanner(null), 4500);
@@ -596,6 +617,10 @@ export default function App() {
       (localP?.role === 'seeker' && winner === 'seekers');
 
     soundFX.playMatchResult(playerWon);
+    if (!isOnlineMatchRef.current && localMatchLiveRef.current) {
+      localMatchLiveRef.current = false;
+      reportLocalMatch('end', { winner, durationSec: Math.round(st.elapsedMatchSeconds) });
+    }
     setEndOfRunSnapshot({
       winner,
       winReason: st.winReason || 'Match concluded.',
@@ -685,6 +710,8 @@ export default function App() {
 
       startAuthoritativeMatch(st, preferredRole);
       matchStateRef.current = st;
+      localMatchLiveRef.current = true;
+      reportLocalMatch('start', { mapId });
       lastEventIdRef.current = st.events[0]?.id || '';
       keysPressedRef.current.clear();
       joystickVecRef.current = { x: 0, y: 0 };
@@ -2210,6 +2237,10 @@ export default function App() {
           onExitToTitle={() => {
             if (isOnlineMatchRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
               wsRef.current.send(JSON.stringify({ type: 'leave_room' }));
+            }
+            if (!isOnlineMatchRef.current && localMatchLiveRef.current) {
+              localMatchLiveRef.current = false;
+              reportLocalMatch('end', { winner: null, durationSec: Math.round(matchStateRef.current.elapsedMatchSeconds) });
             }
             isOnlineMatchRef.current = false;
             setOnlineRoomState(null);
