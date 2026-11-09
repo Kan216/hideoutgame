@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "node --import tsx server.ts",
+    "start": "NODE_ENV=production node --import tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test src/game/rules.test.ts",

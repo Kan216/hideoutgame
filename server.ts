@@ -556,7 +556,8 @@ async function startServer() {
     });
   }
 
-  const PORT = 3000;
+  // Hosting platforms (Render, Railway, Fly…) inject PORT; default to 3000 locally.
+  const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`CITY HIDEOUT authoritative server listening on http://0.0.0.0:${PORT}`);
   });

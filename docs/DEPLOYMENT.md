@@ -26,3 +26,11 @@ Because CITY HIDEOUT uses standard HTML5 `Canvas2D`, pointer events, and WebSock
 ## 4. Windows Desktop Build (Electron / Tauri)
 1. Point Electron `BrowserWindow` or Tauri `tauri.conf.json` (`distDir: "../dist"`) at the built web bundle, or connect directly to the hosted multiplayer instance.
 2. Full keyboard (`WASD`, `Arrows`, `E`, `F`, `Space`, `Esc`) and mouse controls work out of the box.
+
+## Render (Web Service)
+- **Build command**: `bun install --frozen-lockfile && bun run build` (or `npm ci && npm run build`)
+- **Start command**: `bun run start` (or `npm start`) — runs with `NODE_ENV=production`, serving `dist/` + `/ws`.
+- **Port**: the server listens on `process.env.PORT` (Render injects it), defaulting to `3000` locally.
+- **Health check path**: `/healthz`
+- Keep `bun.lock` and `package-lock.json` in sync with `package.json` (run `bun install` / `npm install` after changing dependencies), otherwise frozen installs fail with *"lockfile had changes, but lockfile is frozen"*.
+
