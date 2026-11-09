@@ -17,8 +17,15 @@ import {
   findNearestCollisionFreePoint,
   worldToMinimapCoords,
   getCitySectorLabel,
+  attemptSprint,
+  canPerceive,
+  filterStateForViewer,
+  hasLineOfSight,
+  getAvailableContextualActions,
 } from './rules.ts';
-import { MAPS } from './maps.ts';
+import { MAPS, getMapObjectives } from './maps.ts';
+import { findPath, isCorridorClear } from './navigation.ts';
+import { stepBotAI } from './bots.ts';
 
 function seedTwoPlayers() {
   const state = createInitialMatchState('TEST01', 'p1');
@@ -146,15 +153,16 @@ test('Hiding protection & 15s Max Hide Timer: Killer cannot kill hidden hider, a
   assert.equal(state.players['p2'].hiddenInSpotId, spot.id);
   assert.equal(state.players['p2'].hideTimerRemaining, 15);
 
-  // Killer cannot kill hider while hidden (neither direct elimination nor inspection)
+  // Killer cannot kill hider while hidden (direct elimination only works in the open)
   state.players['p1'].x = spot.x + spot.width / 2;
   state.players['p1'].y = spot.y + spot.height / 2 + 20;
   const directWhileHidden = attemptDirectElimination(state, 'p1');
   assert.equal(directWhileHidden.ok, false);
-  const inspectWhileHidden = attemptInspectHidingSpot(state, 'p1', spot.id, 7000);
-  assert.equal(inspectWhileHidden.ok, false);
   assert.equal(state.players['p2'].alive, true);
   assert.equal(state.players['p2'].hiddenInSpotId, spot.id);
+  // Move the seeker away so the timer test below is not affected by inspections
+  state.players['p1'].x = map.seekerSpawns[0].x;
+  state.players['p1'].y = map.seekerSpawns[0].y;
 
   // Advance 14 seconds -> Hider is still hidden with ~1s left
   for (let i = 0; i < 140; i++) {
@@ -247,6 +255,8 @@ test('Exhaustive Hiding Spot Exit Movement test: All 76 hiding spots across all 
       hider.x = entry.x;
       hider.y = entry.y;
       hider.hiddenInSpotId = null;
+      hider.rehideCooldownRemaining = 0;
+      hider.lastExitedSpotId = null;
       state.hidingOccupancy[spot.id] = null;
 
       const enterRes = attemptEnterHidingSpot(state, 'p2', spot.id);
@@ -337,13 +347,13 @@ test('Line of sight & Inspection cooldown: Seeker cannot eliminate through walls
   // May succeed or report empty
   assert.ok(firstInspect.reason !== 'Inspection on cooldown.');
 
-  // Immediate second inspect within cooldown (<600ms) MUST fail with cooldown reason
+  // Immediate second inspect within cooldown MUST fail with cooldown reason
   const rapidInspect = attemptInspectHidingSpot(state, 'p1', spot.id, now + 100);
   assert.equal(rapidInspect.ok, false);
   assert.equal(rapidInspect.reason, 'Inspection on cooldown.');
 
-  // Inspect after cooldown (>600ms) should be permitted
-  const validInspect = attemptInspectHidingSpot(state, 'p1', spot.id, now + 700);
+  // Inspect after cooldown should be permitted
+  const validInspect = attemptInspectHidingSpot(state, 'p1', spot.id, now + state.config.inspectCooldownMs + 50);
   assert.ok(validInspect.reason !== 'Inspection on cooldown.');
 });
 
@@ -365,3 +375,184 @@ test('Match lifecycle safety: Rejects movement and actions in LOBBY or MATCH_COM
   assert.equal(completedMove.vy, 0);
 });
 
+
+// ───────────────────────── v2.0 gameplay rules ─────────────────────────
+
+function activeMatch() {
+  const state = seedTwoPlayers();
+  state.lifecycle = 'MATCH_ACTIVE';
+  state.countdownRemaining = 0;
+  return state;
+}
+
+function standNextToSpot(state: ReturnType<typeof seedTwoPlayers>, playerId: string, spotIndex = 0) {
+  const map = MAPS[state.config.mapId];
+  const spot = map.hidingSpots[spotIndex];
+  const entry = findNearestCollisionFreePoint(spot.x + spot.width / 2, spot.y + spot.height / 2 + 20, map, 14);
+  state.players[playerId].x = entry.x;
+  state.players[playerId].y = entry.y;
+  return spot;
+}
+
+test('Inspect flush: searching an occupied object forces the hider out, stunned and revealed — but alive', () => {
+  const state = activeMatch();
+  const spot = standNextToSpot(state, 'p2');
+  assert.equal(attemptEnterHidingSpot(state, 'p2', spot.id).ok, true);
+  standNextToSpot(state, 'p1');
+
+  // Seeker gets a "Search" contextual action at the object
+  const acts = getAvailableContextualActions(state, 'p1', 50_000);
+  assert.ok(acts.some((a) => a.action === 'inspect' && a.targetId === spot.id));
+
+  const res = attemptInspectHidingSpot(state, 'p1', spot.id, 50_000);
+  assert.equal(res.ok, true);
+  assert.equal(res.foundPlayerId, 'p2');
+  const hider = state.players['p2'];
+  assert.equal(hider.alive, true, 'hiders are never killed inside an object');
+  assert.equal(hider.hiddenInSpotId, null);
+  assert.equal(state.hidingOccupancy[spot.id], null);
+  assert.ok((hider.stunRemaining ?? 0) > 0);
+  assert.ok((hider.revealedRemaining ?? 0) > 0);
+  assert.ok((state.players['p1'].stunRemaining ?? 0) > 0, 'seeker is busy searching');
+  assert.equal(state.events[0].type, 'flush');
+
+  // Stunned players cannot move
+  const moved = resolvePlayerMovement(hider, 1, 0, 0.05, state, MAPS[state.config.mapId]);
+  assert.equal(moved.x, hider.x);
+});
+
+test('Anti spot-chaining: global re-hide cooldown after leaving ANY spot', () => {
+  const state = activeMatch();
+  const spot = standNextToSpot(state, 'p2', 0);
+  assert.equal(attemptEnterHidingSpot(state, 'p2', spot.id).ok, true);
+  assert.equal(attemptExitHidingSpot(state, 'p2').ok, true);
+  const other = standNextToSpot(state, 'p2', 1);
+  const blocked = attemptEnterHidingSpot(state, 'p2', other.id);
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.reason ?? '', /Catch your breath/);
+  for (let i = 0; i < 35; i++) stepAuthoritativeMatch(state, 0.1, 1000 + i * 100);
+  standNextToSpot(state, 'p2', 1);
+  assert.equal(attemptEnterHidingSpot(state, 'p2', other.id).ok, true);
+});
+
+test('Hide clock does not run during the head start', () => {
+  const state = seedTwoPlayers();
+  assert.equal(state.lifecycle, 'HIDER_HEAD_START');
+  const spot = standNextToSpot(state, 'p2');
+  assert.equal(attemptEnterHidingSpot(state, 'p2', spot.id).ok, true);
+  for (let i = 0; i < 50; i++) stepAuthoritativeMatch(state, 0.1, 1000 + i * 100);
+  assert.equal(state.players['p2'].hideTimerRemaining, state.config.maxHideDurationSeconds);
+});
+
+test('Timeout: hiders who never sent a beacon stage lose; one stage is enough to win on time', () => {
+  const stalled = activeMatch();
+  stalled.elapsedMatchSeconds = stalled.config.survivalTimerSeconds;
+  stepAuthoritativeMatch(stalled, 0.01, 1);
+  assert.equal(stalled.winner, 'seekers');
+
+  const progressed = activeMatch();
+  progressed.objectiveCompletedStages = 1;
+  progressed.elapsedMatchSeconds = progressed.config.survivalTimerSeconds;
+  stepAuthoritativeMatch(progressed, 0.01, 1);
+  assert.equal(progressed.winner, 'hiders');
+});
+
+test('Two escape beacons: progress is tracked per beacon and any beacon advances the shared stages', () => {
+  const state = activeMatch();
+  const map = MAPS[state.config.mapId];
+  const objectives = getMapObjectives(map);
+  assert.equal(objectives.length, 2, 'every map has a central beacon plus a relay');
+  for (const m of Object.values(MAPS)) {
+    for (const o of getMapObjectives(m)) {
+      assert.ok(isPositionWallFree(o.x, o.y, 30, m), `${o.id} must stand in the open`);
+      assert.ok(findPath(m, m.hiderSpawns[0].x, m.hiderSpawns[0].y, o.x, o.y), `${o.id} reachable`);
+    }
+  }
+  const relay = objectives[1];
+  const hider = state.players['p2'];
+  hider.x = relay.x;
+  hider.y = relay.y + 20;
+  assert.equal(setObjectiveInteraction(state, 'p2', true).ok, true);
+  assert.equal(hider.objectiveId, relay.id);
+  for (let i = 0; i < 151; i++) stepAuthoritativeMatch(state, 0.1, 1000 + i * 100);
+  assert.equal(state.objectiveCompletedStages, 1);
+  assert.equal(state.objectiveProgressById?.[map.objective.id] ?? 0, 0);
+  assert.ok(state.events.some((e) => e.type === 'objective_stage' && e.message.includes(relay.label)));
+});
+
+test('Sprint burst: faster than the seeker for a moment, then on cooldown', () => {
+  const state = activeMatch();
+  const hider = state.players['p2'];
+  const base = getPlayerSpeed('hider', state.config, hider);
+  assert.equal(attemptSprint(state, 'p2').ok, true);
+  const boosted = getPlayerSpeed('hider', state.config, hider);
+  assert.ok(boosted > getPlayerSpeed('seeker', state.config));
+  assert.ok(boosted > base);
+  assert.equal(attemptSprint(state, 'p2').ok, false);
+  assert.equal(attemptSprint(state, 'p1').ok, false, 'seekers cannot sprint');
+});
+
+test('Exact line of sight: thin walls block long rays', () => {
+  const wall = { id: 'w', x: 500, y: 0, width: 2, height: 1000, kind: 'brick_wall' as const };
+  assert.equal(hasLineOfSight(0, 500, 1000, 503, [wall]), false);
+  assert.equal(hasLineOfSight(0, 500, 400, 500, [wall]), true);
+});
+
+test('Perception & anti-cheat filter: seekers never receive hidden or unseen hiders, nor occupancy', () => {
+  const state = activeMatch();
+  const map = MAPS[state.config.mapId];
+  const spot = standNextToSpot(state, 'p2');
+  assert.equal(attemptEnterHidingSpot(state, 'p2', spot.id).ok, true);
+  const seekerView = filterStateForViewer(state, 'p1');
+  assert.equal(seekerView.players['p2'].masked, true);
+  assert.equal(seekerView.players['p2'].x, -10000);
+  assert.ok(Object.values(seekerView.hidingOccupancy).every((v) => v === null));
+  // The authoritative state is untouched
+  assert.equal(state.players['p2'].hiddenInSpotId, spot.id);
+
+  // Hider out in the open, far away and not moving → unseen
+  attemptExitHidingSpot(state, 'p2');
+  state.players['p1'].x = map.seekerSpawns[0].x;
+  state.players['p1'].y = map.seekerSpawns[0].y;
+  state.players['p2'].x = map.width - 120;
+  state.players['p2'].y = map.height - 120;
+  state.players['p2'].vx = 0;
+  state.players['p2'].vy = 0;
+  assert.equal(canPerceive(state, state.players['p1'], state.players['p2']), false);
+  // Right next to the seeker in the open → seen
+  state.players['p2'].x = state.players['p1'].x + 40;
+  state.players['p2'].y = state.players['p1'].y;
+  assert.equal(canPerceive(state, state.players['p1'], state.players['p2']), true);
+  // Eliminated viewers spectate with full information
+  state.players['p1'].alive = false;
+  assert.equal(filterStateForViewer(state, 'p1'), state);
+});
+
+test('Navigation: bots can path from the hider spawn to every hiding spot on every map', () => {
+  for (const map of Object.values(MAPS)) {
+    const start = map.hiderSpawns[0];
+    for (const spot of map.hidingSpots) {
+      const path = findPath(map, start.x, start.y, spot.x + spot.width / 2, spot.y + spot.height / 2 + 20);
+      assert.ok(path && path.length > 0, `no path to ${spot.id} on ${map.id}`);
+    }
+    assert.equal(isCorridorClear(start.x, start.y, start.x + 1, start.y, map), true);
+  }
+});
+
+test('Bots: a full bot-only match always terminates with a winner', () => {
+  const state = seedTwoPlayers();
+  for (const p of Object.values(state.players)) p.isBot = true;
+  for (let i = 0; i < 3; i++) {
+    const sp = MAPS[state.config.mapId].hiderSpawns[i + 1];
+    state.players[`b${i}`] = { ...state.players['p2'], id: `b${i}`, name: `b${i}`, x: sp.x, y: sp.y, colorIndex: i + 2 };
+  }
+  startAuthoritativeMatch(state, 'seeker');
+  let now = 1_000_000;
+  for (let t = 0; t < 25 * 300 && state.lifecycle !== 'MATCH_COMPLETED'; t++) {
+    now += 40;
+    for (const p of Object.values(state.players)) stepBotAI(state, p, 0.04, now);
+    stepAuthoritativeMatch(state, 0.04, now);
+  }
+  assert.equal(state.lifecycle, 'MATCH_COMPLETED');
+  assert.ok(state.winner === 'hiders' || state.winner === 'seekers');
+});

@@ -18,9 +18,11 @@ import {
   attemptInspectHidingSpot,
   setObjectiveInteraction,
   stepAuthoritativeMatch,
-  stepBotAI,
+  attemptSprint,
+  filterStateForViewer,
 } from './src/game/rules.ts';
 import { MAPS } from './src/game/maps.ts';
+import { stepBotAI } from './src/game/bots.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -90,14 +92,21 @@ function createOrResumeGuestSession(requestedToken?: string, requestedName?: str
   return session;
 }
 
+/**
+ * Anti-cheat broadcast: every client receives only what its player is allowed to know
+ * (no hiding-spot occupancy or unseen hider positions for seekers, no unseen seekers for hiders).
+ */
 function broadcastRoomState(room: RoomInstance) {
-  const payload = JSON.stringify({
-    type: 'room_state',
-    state: room.state,
-  });
-  for (const [, ws] of room.clients.entries()) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(payload);
+  let sharedPayload: string | null = null;
+  const now = Date.now();
+  for (const [playerId, ws] of room.clients.entries()) {
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    const viewState = filterStateForViewer(room.state, playerId);
+    if (viewState === room.state) {
+      sharedPayload ??= JSON.stringify({ type: 'room_state', state: room.state, serverTime: now });
+      ws.send(sharedPayload);
+    } else {
+      ws.send(JSON.stringify({ type: 'room_state', state: viewState, serverTime: now }));
     }
   }
 }
@@ -427,6 +436,9 @@ async function startServer() {
           state.winReason = null;
           state.objectiveCompletedStages = 0;
           state.objectiveCurrentStageProgress = 0;
+          state.objectiveProgressById = {};
+          state.objectiveActiveIds = [];
+          state.noisePings = [];
           broadcastRoomState(room);
           return;
         }
@@ -450,12 +462,15 @@ async function startServer() {
             attemptDirectElimination(
               state,
               boundSession.playerId,
-              msg.targetId ? String(msg.targetId) : undefined
+              msg.targetId ? String(msg.targetId) : undefined,
+              Date.now()
             );
           } else if (action === 'inspect' && msg.targetId) {
             attemptInspectHidingSpot(state, boundSession.playerId, String(msg.targetId), Date.now());
           } else if (action === 'hold_objective') {
             setObjectiveInteraction(state, boundSession.playerId, Boolean(msg.active));
+          } else if (action === 'sprint') {
+            attemptSprint(state, boundSession.playerId);
           }
           broadcastRoomState(room);
         }
@@ -511,7 +526,7 @@ async function startServer() {
             player.facing = moved.facing;
           }
         }
-        stepAuthoritativeMatch(state, dt);
+        stepAuthoritativeMatch(state, dt, now);
         broadcastRoomState(room);
       }
     }

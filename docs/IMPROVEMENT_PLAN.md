@@ -34,6 +34,13 @@ _Analysis date: 2026-11-09 · based on v1.9.0 (commit 3fae3e3)_
 | V6 | Hiding spots don't telegraph state (shake when occupied & seeker is near, timer warning visible to seeker as a "rustle"). | Missed tension moments |
 | V7 | HUD is dense, emoji-heavy text; few icons; different fonts (JetBrains Mono vs. PixelOperator). | Readability |
 
+## 2.5 Status (v2.0.0, 2026-11-09)
+Done: L1 (fog/perception), L2 (search → flush), L3 (re-hide cooldown), L4 (timeout rule), L5 (per-viewer state filter), L6 (interpolation + soft reconciliation — not full input-sequence prediction), L7 (A* bots with memory), L8 (exact LOS), L9 (injected `nowMs`), V2 (lighting via fog layer), V5/V6 (juice, rustle, flush), plus user requests: **two escape beacons** and **signal-tower construction animation**, and a **hider sprint** found necessary by simulation.
+
+Still open / follow-ups:
+- 2-seeker mode is seeker-dominated in bot-only sims (100%); consider more beacons or lower seeker vision for 2 seekers.
+- L10 catch telegraph animation, L11 split `App.tsx`, V1 unified pixel scale + real tilesets, V3 static-layer caching, V4 roof occlusion, V7 HUD redesign, bot difficulty levels, reconnection grace period.
+
 ## 3. Plan (phased, each phase shippable)
 
 ### Phase 0 — Foundations (½ day)

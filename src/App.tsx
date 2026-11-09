@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { CHARACTER_SKINS, CharacterSkinId, MapId, MAPS } from './game/maps';
+import { CHARACTER_SKINS, CharacterSkinId, MapId, MAPS, getMapObjectives } from './game/maps';
 import {
   MatchState,
   PlayerRole,
@@ -18,13 +18,23 @@ import {
   attemptInspectHidingSpot,
   setObjectiveInteraction,
   stepAuthoritativeMatch,
-  stepBotAI,
   getAvailableContextualActions,
   generateGuestName,
   getCitySectorLabel,
   formatMatchTime,
   MatchEventLog,
+  PlayerState,
+  attemptSprint,
+  filterStateForViewer,
 } from './game/rules';
+import {
+  computeVisibilityPolygon,
+  drawFogOfWar,
+  drawNoisePings,
+  drawPlayerStatusFx,
+  drawScreenFlash,
+  drawTransmitLinks,
+} from './game/worldFx';
 import {
   drawPixelMap,
   drawPlayerSprite,
@@ -35,6 +45,7 @@ import {
   stepAndDrawFloatingTexts,
 } from './game/pixelSprites';
 import { soundFX } from './game/sound';
+import { stepBotAI } from './game/bots';
 import { MobileControls } from './components/MobileControls';
 import { LobbyModal } from './components/LobbyModal';
 import {
@@ -76,6 +87,9 @@ interface HudSnapshot {
   spectatingPlayerName: string | null;
   spectatingRole: PlayerRole | null;
   activeEvents: MatchEventLog[];
+  sprintCooldown: number;
+  sprinting: boolean;
+  rehideCooldown: number;
 }
 
 export default function App() {
@@ -165,6 +179,9 @@ export default function App() {
     spectatingPlayerName: null,
     spectatingRole: null,
     activeEvents: [],
+    sprintCooldown: 0,
+    sprinting: false,
+    rehideCooldown: 0,
   });
 
   // Refs for Decoupled 60 FPS Canvas Simulation
@@ -185,6 +202,103 @@ export default function App() {
   const pingMsRef = useRef<number | null>(null);
   const spectatedIdRef = useRef<string | null>(null);
   const lastCountdownSecRef = useRef<number>(-1);
+  // Juice / rendering refs
+  const renderPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const hitStopRef = useRef<number>(0);
+  const flashRef = useRef<{ amount: number; color: string }>({ amount: 0, color: '#FFFFFF' });
+  const reducedMotionRef = useRef<boolean>(
+    typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  );
+  const cameraRef = useRef<{ x: number; y: number } | null>(null);
+  const fogPolyRef = useRef<number[]>([]);
+
+  /** Fire sound/particles/shake for every match event we have not seen yet (online + offline). */
+  const processNewMatchEventsRef = useRef<(st: MatchState) => void>(() => {});
+  processNewMatchEventsRef.current = (st: MatchState) => {
+    const events = st.events || [];
+    if (events.length === 0 || events[0].id === lastEventIdRef.current) return;
+    const fresh: MatchEventLog[] = [];
+    for (const e of events) {
+      if (e.id === lastEventIdRef.current) break;
+      fresh.push(e);
+    }
+    // Unknown last id (joined mid-match): only replay the most recent few
+    const lastKnown = events.some((e) => e.id === lastEventIdRef.current);
+    const toPlay = (lastKnown ? fresh : fresh.slice(0, 2)).reverse();
+    lastEventIdRef.current = events[0].id;
+    const calm = reducedMotionRef.current;
+    const myId = guestIdRef.current;
+
+    for (const evt of toPlay) {
+      const x = evt.x ?? 0;
+      const y = evt.y ?? 0;
+      switch (evt.type) {
+        case 'elimination': {
+          soundFX.playElimination();
+          spawnPixelBurst(x, y, 28, '#EF4444', 160);
+          spawnPixelBurst(x, y, 10, '#FDE68A', 90);
+          spawnFloatingWorldText(x, y, '☠️ CAUGHT!', '#EF4444');
+          if (!calm) {
+            cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.5);
+            flashRef.current = { amount: 0.35, color: '#FCA5A5' };
+          }
+          hitStopRef.current = 0.09;
+          navigator.vibrate?.([60, 40, 60]);
+          break;
+        }
+        case 'flush': {
+          soundFX.playForcedExitWarning();
+          spawnPixelBurst(x, y, 18, '#F59E0B', 120);
+          spawnFloatingWorldText(x, y, '❗ FLUSHED OUT!', '#FBBF24');
+          if (!calm) cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.28);
+          navigator.vibrate?.(35);
+          break;
+        }
+        case 'inspect_empty': {
+          soundFX.playInspectEmpty();
+          spawnPixelBurst(x, y, 6, '#94A3B8', 55);
+          spawnFloatingWorldText(x, y, 'EMPTY', '#94A3B8');
+          break;
+        }
+        case 'objective_stage': {
+          soundFX.playObjectiveStageComplete(st.objectiveCompletedStages);
+          spawnPixelBurst(x, y - 30, 40, '#34D399', 190);
+          spawnPixelBurst(x, y - 30, 16, '#FDE68A', 120);
+          spawnFloatingWorldText(x, y - 40, `⚡ TIER ${st.objectiveCompletedStages} BUILT!`, '#34D399');
+          if (!calm) {
+            cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.22);
+            flashRef.current = { amount: 0.22, color: '#A7F3D0' };
+          }
+          navigator.vibrate?.([40, 40, 100]);
+          break;
+        }
+        case 'hide': {
+          soundFX.playForcedExitWarning();
+          spawnPixelBurst(x, y, 14, '#F59E0B', 95);
+          spawnFloatingWorldText(x, y, '⚠️ TIME OUT!', '#F59E0B');
+          break;
+        }
+        case 'info': {
+          if (evt.message.includes('SEEKER IS RELEASED')) {
+            soundFX.playSeekerReleased();
+            const m = MAPS[st.config.mapId];
+            if (m) {
+              spawnFloatingWorldText(
+                m.seekerSpawns[0]?.x ?? m.width / 2,
+                m.seekerSpawns[0]?.y ?? m.height / 2,
+                '🚨 SEEKERS UNLEASHED!',
+                '#EF4444'
+              );
+            }
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    void myId;
+  };
 
   useEffect(() => {
     guestIdRef.current = guestId;
@@ -367,32 +481,29 @@ export default function App() {
             const incoming: MatchState = data.state;
             setOnlineRoomState(incoming);
 
-            if (incoming.events && incoming.events.length > 0 && incoming.events[0].id !== lastEventIdRef.current) {
-              const latest = incoming.events[0];
-              lastEventIdRef.current = latest.id;
-              if (latest.type === 'elimination') {
-                soundFX.playElimination();
-                cameraShakeRef.current = 0.45;
-                spawnPixelBurst(latest.x || 0, latest.y || 0, 24, '#EF4444', 150);
-                spawnFloatingWorldText(latest.x || 0, latest.y || 0, '☠️ ELIMINATED!', '#EF4444');
-                navigator.vibrate?.([60, 40, 60]);
-              } else if (latest.type === 'objective_stage') {
-                soundFX.playObjectiveStageComplete(incoming.objectiveCompletedStages);
-                spawnPixelBurst(latest.x || 0, latest.y || 0, 28, '#10B981', 160);
-                spawnFloatingWorldText(latest.x || 0, latest.y || 0, `⚡ STAGE ${incoming.objectiveCompletedStages} COMPLETE!`, '#10B981');
-                navigator.vibrate?.([40, 40, 100]);
-              } else if (latest.type === 'hide') {
-                soundFX.playForcedExitWarning();
-                spawnPixelBurst(latest.x || 0, latest.y || 0, 16, '#F59E0B', 100);
-                spawnFloatingWorldText(latest.x || 0, latest.y || 0, '⚠️ TIME OUT!', '#F59E0B');
-              } else if (latest.type === 'info' && latest.message.includes('SEEKER IS RELEASED')) {
-                soundFX.playSeekerReleased();
-                const m = MAPS[incoming.config.mapId];
-                if (m) {
-                  spawnFloatingWorldText(m.seekerSpawns[0]?.x ?? m.width / 2, m.seekerSpawns[0]?.y ?? m.height / 2, '🚨 SEEKERS UNLEASHED!', '#EF4444');
-                }
+            // Keep the locally predicted position for our own player when the server agrees closely
+            const myId = guestIdRef.current;
+            const prevLocal = matchStateRef.current.players[myId];
+            const incLocal = incoming.players[myId];
+            if (
+              isOnlineMatchRef.current &&
+              prevLocal &&
+              incLocal &&
+              incLocal.alive &&
+              !incLocal.hiddenInSpotId &&
+              !prevLocal.hiddenInSpotId &&
+              (incLocal.stunRemaining ?? 0) <= 0
+            ) {
+              const err = Math.hypot(prevLocal.x - incLocal.x, prevLocal.y - incLocal.y);
+              if (err < 72) {
+                // Soft reconcile: drift toward the authoritative position only when noticeably off
+                const k = err > 20 ? 0.18 : 0;
+                incLocal.x = prevLocal.x + (incLocal.x - prevLocal.x) * k;
+                incLocal.y = prevLocal.y + (incLocal.y - prevLocal.y) * k;
               }
             }
+
+            processNewMatchEventsRef.current(incoming);
 
             if (
               incoming.lifecycle === 'HIDER_HEAD_START' ||
@@ -627,39 +738,9 @@ export default function App() {
         }
       }
     } else if (chosen.action === 'eliminate') {
-      const res = attemptDirectElimination(st, myId, chosen.targetId);
-      if (res.ok) {
-        soundFX.playElimination();
-        cameraShakeRef.current = 0.35;
-        navigator.vibrate?.([60, 40, 60]);
-        const p = st.players[myId];
-        if (p) {
-          spawnPixelBurst(p.x, p.y, 20, '#EF4444', 130);
-          spawnFloatingWorldText(p.x, p.y, '☠️ ELIMINATED!', '#EF4444');
-        }
-      }
+      attemptDirectElimination(st, myId, chosen.targetId, Date.now());
     } else if (chosen.action === 'inspect' && chosen.targetId) {
-      const res = attemptInspectHidingSpot(st, myId, chosen.targetId, Date.now());
-      if (res.ok) {
-        if (res.foundPlayerId) {
-          soundFX.playElimination();
-          cameraShakeRef.current = 0.4;
-          navigator.vibrate?.([60, 40, 60]);
-          const p = st.players[myId];
-          if (p) {
-            spawnPixelBurst(p.x, p.y, 22, '#EF4444', 140);
-            spawnFloatingWorldText(p.x, p.y, '🎯 FOUND!', '#EF4444');
-          }
-        } else {
-          soundFX.playInspectEmpty();
-          navigator.vibrate?.(15);
-          const p = st.players[myId];
-          if (p) {
-            spawnPixelBurst(p.x, p.y, 8, '#F59E0B', 65);
-            spawnFloatingWorldText(p.x, p.y, 'EMPTY', '#94A3B8');
-          }
-        }
-      }
+      attemptInspectHidingSpot(st, myId, chosen.targetId, Date.now());
     } else if (chosen.action === 'objective') {
       const p = st.players[myId];
       navigator.vibrate?.(15);
@@ -681,6 +762,24 @@ export default function App() {
       return;
     }
     setObjectiveInteraction(st, myId, holding);
+  }, []);
+
+  const triggerSprint = useCallback(() => {
+    const st = matchStateRef.current;
+    const myId = guestIdRef.current;
+    if (isOnlineMatchRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'action', action: 'sprint' }));
+      const p = st.players[myId];
+      // optimistic local prediction so movement feels instant
+      if (p) attemptSprint(st, myId);
+      return;
+    }
+    const res = attemptSprint(st, myId);
+    if (res.ok) {
+      const p = st.players[myId];
+      if (p) spawnPixelBurst(p.x, p.y + 10, 8, '#7DD3FC', 60);
+      navigator.vibrate?.(12);
+    }
   }, []);
 
   // Global Keyboard Listeners
@@ -756,6 +855,11 @@ export default function App() {
         setHoldingObjectiveState(true);
       }
 
+      if (!e.repeat && key === 'shift') {
+        e.preventDefault();
+        triggerSprint();
+      }
+
       keysPressedRef.current.add(key);
     };
 
@@ -788,6 +892,7 @@ export default function App() {
     setHoldingObjectiveState,
     sendEmote,
     cycleSpectatorTarget,
+    triggerSprint,
   ]);
 
   // Mount Isolated 60 FPS Canvas2D Simulation & Renderer Once
@@ -857,10 +962,11 @@ export default function App() {
             localP.facing = moved.facing;
           }
         } else {
-          const prevLifecycle = st.lifecycle;
-          const prevStages = st.objectiveCompletedStages;
+          // Hit-stop: freeze the simulation for a few frames on big impacts (render keeps going)
+          const frozen = hitStopRef.current > 0;
+          if (frozen) hitStopRef.current = Math.max(0, hitStopRef.current - dt);
 
-          for (const player of Object.values(st.players)) {
+          for (const player of frozen ? [] : Object.values(st.players)) {
             if (player.id === myId) {
               const moved = resolvePlayerMovement(player, ix, iy, dt, st, map);
               const stepDist = Math.hypot(moved.x - player.x, moved.y - player.y);
@@ -886,18 +992,8 @@ export default function App() {
             }
           }
 
-          const wasHidden = st.players[myId]?.hiddenInSpotId !== null;
-          stepAuthoritativeMatch(st, dt);
-          const nowHidden = st.players[myId]?.hiddenInSpotId !== null;
-
-          if (wasHidden && !nowHidden) {
-            soundFX.playForcedExitWarning();
-            const p = st.players[myId];
-            if (p) {
-              spawnPixelBurst(p.x, p.y, 14, '#F59E0B', 95);
-              spawnFloatingWorldText(p.x, p.y, '⚠️ TIME OUT!', '#F59E0B');
-            }
-          }
+          stepAuthoritativeMatch(st, dt, Date.now());
+          processNewMatchEventsRef.current(st);
 
           if (st.lifecycle === 'HIDER_HEAD_START') {
             const currentSec = Math.ceil(st.countdownRemaining);
@@ -913,26 +1009,6 @@ export default function App() {
             );
           }
 
-          if (prevLifecycle === 'HIDER_HEAD_START' && st.lifecycle === 'MATCH_ACTIVE') {
-            soundFX.playSeekerReleased();
-            spawnFloatingWorldText(
-              map.seekerSpawns[0]?.x ?? map.width / 2,
-              map.seekerSpawns[0]?.y ?? map.height / 2,
-              '🚨 SEEKERS UNLEASHED!',
-              '#EF4444'
-            );
-          }
-          if (st.objectiveCompletedStages > prevStages) {
-            soundFX.playObjectiveStageComplete(st.objectiveCompletedStages);
-            spawnPixelBurst(map.objective.x, map.objective.y, 24, '#10B981', 140);
-            spawnFloatingWorldText(
-              map.objective.x,
-              map.objective.y,
-              `⚡ STAGE ${st.objectiveCompletedStages} COMPLETE!`,
-              '#10B981'
-            );
-            navigator.vibrate?.([40, 40, 100]);
-          }
           if (st.lifecycle === 'MATCH_COMPLETED') {
             triggerGameOverFromState(st);
           }
@@ -999,6 +1075,9 @@ export default function App() {
             spectatingPlayerName: specTarget ? specTarget.name : null,
             spectatingRole: specTarget ? specTarget.role : null,
             activeEvents: st.events.slice(0, 4),
+            sprintCooldown: localP?.sprintCooldownRemaining ?? 0,
+            sprinting: (localP?.sprintRemaining ?? 0) > 0,
+            rehideCooldown: localP?.rehideCooldownRemaining ?? 0,
           });
         }
       } else if (shellStateRef.current === 'title') {
@@ -1013,21 +1092,56 @@ export default function App() {
       ctx.fillStyle = '#090D16';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      const inMatch =
+        shellStateRef.current !== 'title' &&
+        (st.lifecycle === 'HIDER_HEAD_START' ||
+          st.lifecycle === 'SEEKER_RELEASED' ||
+          st.lifecycle === 'MATCH_ACTIVE');
+      // Perception: online the server already filtered; offline apply the same rule locally.
+      const viewState =
+        shellStateRef.current === 'title' || isOnlineMatchRef.current ? st : filterStateForViewer(st, myId);
+
+      // Smoothed render positions (interpolates 25Hz network snapshots for remote players)
+      const smoothK = 1 - Math.exp(-dt * 16);
+      const renderPos = renderPosRef.current;
+      const posOf = (p: PlayerState) => {
+        if (!isOnlineMatchRef.current || p.id === myId) return p;
+        let rp = renderPos.get(p.id);
+        if (!rp || Math.hypot(rp.x - p.x, rp.y - p.y) > 160) {
+          rp = { x: p.x, y: p.y };
+          renderPos.set(p.id, rp);
+        }
+        return rp;
+      };
+      for (const p of Object.values(viewState.players)) {
+        if (p.masked) {
+          renderPos.delete(p.id);
+          continue;
+        }
+        const rp = renderPos.get(p.id);
+        if (rp) {
+          rp.x += (p.x - rp.x) * smoothK;
+          rp.y += (p.y - rp.y) * smoothK;
+        }
+      }
+
       ctx.save();
 
       let camX = map.width / 2;
       let camY = map.height / 2;
+      let followTarget: PlayerState | null = null;
 
       if (shellStateRef.current === 'title') {
         camX = map.width / 2 + Math.cos(timeSec * 0.2) * 180;
         camY = map.height / 2 + Math.sin(timeSec * 0.16) * 140;
+        cameraRef.current = null;
       } else {
         let targetP = st.players[myId];
         if (targetP && !targetP.alive) {
-          const living = Object.values(st.players).filter((p) => p.alive);
+          const living = Object.values(st.players).filter((p) => p.alive && !p.masked);
           if (living.length > 0) {
             let specP = spectatedIdRef.current ? st.players[spectatedIdRef.current] : null;
-            if (!specP || !specP.alive) {
+            if (!specP || !specP.alive || specP.masked) {
               specP = living[0];
               spectatedIdRef.current = specP.id;
             }
@@ -1035,13 +1149,22 @@ export default function App() {
           }
         }
         if (targetP) {
-          camX = targetP.x;
-          camY = targetP.y;
+          followTarget = targetP;
+          const tp = posOf(targetP);
+          // Smooth follow with a little look-ahead in the movement direction
+          const lookX = tp.x + targetP.vx * 0.18;
+          const lookY = tp.y + targetP.vy * 0.18;
+          if (!cameraRef.current) cameraRef.current = { x: lookX, y: lookY };
+          const ck = 1 - Math.exp(-dt * 9);
+          cameraRef.current.x += (lookX - cameraRef.current.x) * ck;
+          cameraRef.current.y += (lookY - cameraRef.current.y) * ck;
+          camX = cameraRef.current.x;
+          camY = cameraRef.current.y;
         }
       }
 
       if (cameraShakeRef.current > 0) {
-        const shake = cameraShakeRef.current * cameraShakeRef.current * 18;
+        const shake = reducedMotionRef.current ? 0 : cameraShakeRef.current * cameraShakeRef.current * 18;
         camX += (Math.random() - 0.5) * shake;
         camY += (Math.random() - 0.5) * shake;
         cameraShakeRef.current = Math.max(0, cameraShakeRef.current - dt * 1.8);
@@ -1051,24 +1174,88 @@ export default function App() {
       const offsetY = Math.round(canvas.height / 2 - camY);
       ctx.translate(offsetX, offsetY);
 
-      drawPixelMap(ctx, map, st, myId, timeSec);
+      // Hiding objects wobble when something rustles or bursts out of them
+      const wobbleSpotIds = new Set<string>();
+      for (const ping of viewState.noisePings ?? []) {
+        if (ping.kind !== 'rustle' && ping.kind !== 'flush') continue;
+        for (const spot of map.hidingSpots) {
+          const cx = spot.x + spot.width / 2;
+          const cy = spot.y + spot.height / 2;
+          if (Math.hypot(cx - ping.x, cy - ping.y) < 70) {
+            wobbleSpotIds.add(spot.id);
+            break;
+          }
+        }
+      }
 
-      const localP = st.players[myId];
+      drawPixelMap(ctx, map, viewState, myId, timeSec, { wobbleSpotIds });
+      const objectives = getMapObjectives(map);
+      drawTransmitLinks(ctx, viewState, objectives, posOf, timeSec);
+
+      const localP = viewState.players[myId];
       const viewerRole = localP?.role || 'hider';
-      const sortedPlayers = Object.values(st.players).sort((a, b) => a.y - b.y);
+      const sortedPlayers = Object.values(viewState.players)
+        .filter((p) => !p.masked)
+        .sort((a, b) => posOf(a).y - posOf(b).y);
       for (const p of sortedPlayers) {
-        drawPlayerSprite(
-          ctx,
-          p,
-          p.id === myId,
-          viewerRole,
-          distWalkedMapRef.current[p.id] || 0
-        );
+        const pos = posOf(p);
+        const drawP = pos === p ? p : { ...p, x: pos.x, y: pos.y };
+        drawPlayerSprite(ctx, drawP, p.id === myId, viewerRole, distWalkedMapRef.current[p.id] || 0);
+        drawPlayerStatusFx(ctx, p, pos.x, pos.y, timeSec);
+
+        // Footstep dust puffs while moving
+        if (inMatch && p.alive && !p.hiddenInSpotId && Math.hypot(p.vx, p.vy) > 40) {
+          const walked = distWalkedMapRef.current[p.id] || 0;
+          const stepKey = `__dust_${p.id}`;
+          const lastDust = (distWalkedMapRef.current[stepKey] as number | undefined) ?? 0;
+          if (walked - lastDust > 26) {
+            distWalkedMapRef.current[stepKey] = walked;
+            spawnPixelBurst(pos.x, pos.y + 12, 2, p.role === 'seeker' ? '#475569' : '#94A3B8', 22);
+          }
+        }
+      }
+      // Track walking distance for remote players too (online), so their animation plays
+      if (isOnlineMatchRef.current) {
+        for (const p of sortedPlayers) {
+          if (p.id === myId) continue;
+          const sp = Math.hypot(p.vx, p.vy);
+          if (sp > 1) distWalkedMapRef.current[p.id] = (distWalkedMapRef.current[p.id] || 0) + sp * dt;
+        }
       }
 
       stepAndDrawParticles(ctx, dt);
+      ctx.restore();
+
+      // 2b. Fog of war: only living players in an active match see through their own eyes
+      const viewer = st.players[myId];
+      if (inMatch && viewer && viewer.alive && followTarget && followTarget.id === myId) {
+        const vp = posOf(viewer);
+        const radius =
+          viewer.role === 'seeker' ? st.config.seekerVisionRadius ?? 250 : st.config.hiderVisionRadius ?? 340;
+        const poly = computeVisibilityPolygon(vp.x, vp.y, radius, map.walls, fogPolyRef.current);
+        drawFogOfWar(ctx, canvas.width, canvas.height, offsetX, offsetY, {
+          polygon: poly,
+          originX: vp.x,
+          originY: vp.y,
+          radius,
+          darkness: viewer.hiddenInSpotId ? 0.84 : 0.74,
+          map,
+          objectives,
+          timeSec,
+        });
+      }
+
+      // 2c. World-space overlays that must read through the darkness
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      if (inMatch) drawNoisePings(ctx, viewState.noisePings, timeSec);
       stepAndDrawFloatingTexts(ctx, dt);
       ctx.restore();
+
+      if (flashRef.current.amount > 0) {
+        drawScreenFlash(ctx, canvas.width, canvas.height, flashRef.current.amount, flashRef.current.color);
+        flashRef.current.amount = Math.max(0, flashRef.current.amount - dt * 2.2);
+      }
 
       // 3. Render Transparent Corner Minimap when in gameplay
       const miniCanvas = minimapCanvasRef.current;
@@ -1080,7 +1267,7 @@ export default function App() {
             miniCanvas.width,
             miniCanvas.height,
             map,
-            st,
+            viewState,
             myId,
             timeSec,
             canvas.width,
@@ -1468,7 +1655,7 @@ export default function App() {
                     <span className="text-slate-400 tabular-nums hidden xs:inline">
                       {hud.stageProgress > 0
                         ? `${Math.ceil(hud.stageDuration - hud.stageProgress)}s`
-                        : '15s/stg'}
+                        : `${hud.stageDuration}s/stg · 2 beacons`}
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
@@ -1630,6 +1817,28 @@ export default function App() {
             </div>
           </div>
 
+          {/* Hider ability strip (Desktop): sprint + catch-breath cooldown */}
+          {!showMobileControls && hud.alive && hud.role === 'hider' && !hud.hiddenInSpotId && (
+            <div className="pointer-events-none mx-auto mb-1.5 flex items-center gap-2 text-[11px] font-mono">
+              <span
+                className={`px-2.5 py-1 rounded-lg border shadow ${
+                  hud.sprinting
+                    ? 'bg-sky-400 text-slate-950 border-sky-100'
+                    : hud.sprintCooldown > 0
+                    ? 'bg-slate-900/90 text-slate-400 border-slate-700'
+                    : 'bg-sky-700/90 text-white border-sky-400'
+                }`}
+              >
+                ⚡ [SHIFT] {hud.sprinting ? 'SPRINTING!' : hud.sprintCooldown > 0 ? `Sprint ${Math.ceil(hud.sprintCooldown)}s` : 'Sprint ready'}
+              </span>
+              {hud.rehideCooldown > 0 && (
+                <span className="px-2.5 py-1 rounded-lg border bg-amber-950/90 text-amber-200 border-amber-600/60 shadow">
+                  😮‍💨 Catch your breath {Math.ceil(hud.rehideCooldown)}s
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Bottom Contextual Prompt Banner (Desktop & Keyboard Prompt) */}
           {!showMobileControls && hud.contextualActions.length > 0 && (
             <div className="pointer-events-auto mx-auto mb-2 flex items-center gap-3 bg-[#090D16]/95 border-2 border-amber-400/80 rounded-xl px-5 py-2.5 shadow-xl">
@@ -1697,7 +1906,7 @@ export default function App() {
           {hud.activeEvents.map((evt) => {
             const isElim = evt.type === 'elimination';
             const isObj = evt.type === 'objective_stage';
-            const isHide = evt.type === 'hide';
+            const isHide = evt.type === 'hide' || evt.type === 'flush';
             const isVic = evt.type === 'victory';
             return (
               <div
@@ -1766,6 +1975,10 @@ export default function App() {
         onTriggerAction={(act) => executeContextualAction(act)}
         onHoldObjectiveChange={(holding) => setHoldingObjectiveState(holding)}
         onSendEmote={sendEmote}
+        showSprint={hud.role === 'hider' && hud.alive && !hud.hiddenInSpotId && hud.lifecycle !== 'LOBBY'}
+        sprintCooldown={hud.sprintCooldown}
+        sprinting={hud.sprinting}
+        onSprint={triggerSprint}
       />
 
       {/* Online Multiplayer & Match Setup Lobby Modal */}

@@ -11,6 +11,11 @@ interface MobileControlsProps {
   onTriggerAction: (action: ContextualActionPrompt) => void;
   onHoldObjectiveChange: (holding: boolean) => void;
   onSendEmote?: (text: string) => void;
+  /** Hider sprint burst */
+  showSprint?: boolean;
+  sprintCooldown?: number;
+  sprinting?: boolean;
+  onSprint?: () => void;
 }
 
 const QUICK_EMOTES = ['👋 Hey!', '👀 Spotted!', '🏃 Run!', '🆘 Help!', '🏆 GG', '🤫 Shh!'];
@@ -25,6 +30,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onTriggerAction,
   onHoldObjectiveChange,
   onSendEmote,
+  showSprint = false,
+  sprintCooldown = 0,
+  sprinting = false,
+  onSprint,
 }) => {
   const baseRef = useRef<HTMLDivElement | null>(null);
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -151,6 +160,29 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           </button>
         )}
 
+        {showSprint && (
+          <button
+            type="button"
+            aria-label="Sprint"
+            disabled={sprintCooldown > 0 && !sprinting}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              navigator.vibrate?.(15);
+              onSprint?.();
+            }}
+            className={`relative w-[58px] h-[58px] sm:w-[68px] sm:h-[68px] rounded-full border-2 shadow-xl font-display font-bold text-[11px] flex flex-col items-center justify-center active:scale-95 transition-transform overflow-hidden ${
+              sprinting
+                ? 'bg-sky-400 text-slate-950 border-sky-100'
+                : sprintCooldown > 0
+                ? 'bg-slate-800/90 text-slate-400 border-slate-600'
+                : 'bg-sky-600 text-white border-sky-300'
+            }`}
+          >
+            <span className="text-lg leading-none">⚡</span>
+            <span>{sprinting ? 'GO!' : sprintCooldown > 0 ? `${Math.ceil(sprintCooldown)}s` : 'SPRINT'}</span>
+          </button>
+        )}
+
         {contextualActions.map((act) => {
           const isObj = act.action === 'objective';
           const isElim = act.action === 'eliminate';
@@ -214,8 +246,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   : act.action === 'exit_hide'
                   ? 'EXIT HIDING'
                   : act.action === 'eliminate'
-                  ? 'ELIMINATE HIDER'
-                  : 'INSPECT OBJECT'}
+                  ? 'CATCH HIDER'
+                  : 'SEARCH OBJECT'}
               </span>
               <span className="text-[10px] sm:text-[11px] font-sans font-medium opacity-90 truncate max-w-[160px]">
                 {act.label}

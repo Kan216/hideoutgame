@@ -13,6 +13,18 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 - **Line of Sight & Inspection Cooldown (Test 9)**: Verified Seeker cannot eliminate a Hider when blocked by solid walls, and Seeker inspect action strictly enforces a `600ms` cooldown timer.
 - **Match Lifecycle Safety (Test 10)**: Verified movement physics enforce zero velocity during `LOBBY` and `MATCH_COMPLETED` phases.
 
+### v2.0 additions (Tests 11–20)
+- **Inspect flush** (hider forced out alive, stunned + revealed, seeker busy), **re-hide cooldown**, **hide clock paused during head start**, **timeout winner rule**, **two beacons** (all beacons wall-free & reachable, per-beacon progress, relay completes shared stage), **sprint**, **exact LOS through thin walls**, **perception & anti-cheat filter**, **A* reachability of all 76 hiding spots**, **bot-only match terminates**.
+- Inspect cooldown is now `1100ms` (Test 9 uses `config.inspectCooldownMs`).
+
+### Balance simulation
+`npm run simulate [matchesPerMap] [seekerCount]` — headless bot-vs-bot. Latest (30/map, 1v4): Downtown 87%, Harbor 63%, Modern 83%, Mystic 67% seeker wins (≈75% overall, ≈100s matches). 2v5 bot-only is still 100% seeker — see IMPROVEMENT_PLAN follow-ups.
+
+### v2.0 browser verification (Playwright, headless Chromium)
+- Desktop 1280×720 offline match: 60 fps, 0 console errors, fog of war, relay beacon, noise rings, sprint HUD.
+- iPhone 13 landscape: sprint button + shortened HOLD BEACON button.
+- Online: node WS host + browser guest via `?room=CODE`: seeker client receives masked hiders and all-null occupancy; hider client receives masked out-of-sight seeker; sprint action works; browser renders bot transmitting beacon with construction animation.
+
 ## 2. Browser, Mobile & Multi-Client Verification (`playwright-cli`)
 - **Desktop Viewport (`1440×900`)**: Title screen renders live pixel-art world tour + 4-map selector + 7-skin selector + BGM toggle; clicking **Play as Guest** enters `'playing'` immediately with 10s head-start countdown, real PNG character/object sprites, WAV SFX, unobstructed HUD + corner minimap, real-time toast feed, round timer, zero-GC floating world combat feedback text, and spectator mode target cycling.
 - **Mobile Viewport (`390×844` Portrait & `667×375` / `740×360` Landscape)**:

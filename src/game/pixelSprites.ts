@@ -6,6 +6,7 @@ import type {
   WallRect,
 } from './maps.ts';
 import type { MatchState, PlayerState } from './rules.ts';
+import { drawBeaconConstruction, drawRelayBase } from './worldFx.ts';
 
 /**
  * Zero-GC Pre-Allocated Particle Ring Buffer for Pixel-Art Juice
@@ -22,7 +23,7 @@ export interface PooledParticle {
   color: string;
 }
 
-const MAX_PARTICLES = 64;
+const MAX_PARTICLES = 192;
 const particlePool: PooledParticle[] = Array.from({ length: MAX_PARTICLES }, () => ({
   active: false,
   x: 0,
@@ -205,12 +206,18 @@ function getSpriteImage(key: SpriteAssetKey): HTMLImageElement | null {
   return img && img.complete && img.naturalWidth > 0 ? img : null;
 }
 
+export interface MapDrawFx {
+  /** Hiding spots that should visibly wobble (rustling / just flushed). */
+  wobbleSpotIds?: Set<string>;
+}
+
 export function drawPixelMap(
   ctx: CanvasRenderingContext2D,
   map: MapConfig,
   state: MatchState,
   localPlayerId: string,
-  timeSec: number
+  timeSec: number,
+  fx: MapDrawFx = {}
 ) {
   // 1. Base Cobblestone & Textured Ground (World Tileset style)
   ctx.fillStyle =
@@ -388,6 +395,11 @@ export function drawPixelMap(
 
   // 6. City-Center Escape Beacon & Crystal Fountain Objective
   drawEscapeBeacon(ctx, map, state, timeSec);
+  drawBeaconConstruction(ctx, map.objective, state, timeSec, true);
+  for (const relay of map.extraObjectives ?? []) {
+    drawRelayBase(ctx, relay, state.objectiveActiveIds?.includes(relay.id) ?? false, timeSec);
+    drawBeaconConstruction(ctx, relay, state, timeSec, false);
+  }
 
   // 7. Data-Driven Hiding Places (18–20 PixelSpaces & Fantasy Objects)
   const localPlayer = state.players[localPlayerId];
@@ -399,6 +411,11 @@ export function drawPixelMap(
       localPlayer?.role === 'hider' &&
       occupantId !== localPlayerId;
 
+    const wobble = fx.wobbleSpotIds?.has(spot.id);
+    if (wobble) {
+      ctx.save();
+      ctx.translate(Math.round(Math.sin(timeSec * 42) * 2), Math.round(Math.cos(timeSec * 37)));
+    }
     drawHidingSpotSprite(
       ctx,
       spot,
@@ -407,6 +424,7 @@ export function drawPixelMap(
       localPlayer,
       timeSec
     );
+    if (wobble) ctx.restore();
   }
 
   // 8. Streetlamps & Warm Ambient Light Halos (Furniture/Light_1 & Lamp_stand_1)
@@ -846,7 +864,9 @@ function drawEscapeBeacon(
   timeSec: number
 ) {
   const { x, y, interactionRange } = map.objective;
-  const isBeingHeld = state.objectiveActiveHiderIds.length > 0;
+  const isBeingHeld = state.objectiveActiveIds
+    ? state.objectiveActiveIds.includes(map.objective.id)
+    : state.objectiveActiveHiderIds.length > 0;
   const pulse = 0.5 + 0.5 * Math.sin(timeSec * (isBeingHeld ? 8 : 3));
 
   // Interaction perimeter ring
@@ -903,16 +923,6 @@ function drawEscapeBeacon(
   ctx.fillStyle = '#FEF08A';
   ctx.fillRect(Math.round(x - 3), Math.round(y - 41), 5, 5);
 
-  // Progress Arc when actively held
-  if (state.objectiveCurrentStageProgress > 0) {
-    const ratio =
-      state.objectiveCurrentStageProgress / state.config.objectiveStageDurationSeconds;
-    ctx.beginPath();
-    ctx.arc(x, y, 46, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
-    ctx.strokeStyle = '#10B981';
-    ctx.lineWidth = 5;
-    ctx.stroke();
-  }
 }
 
 function drawHidingSpotSprite(
@@ -1572,23 +1582,27 @@ export function drawCityMinimap(
     ctx.fillRect(sx - 1, sy - 1, 3, 3);
   }
 
-  // 5. City-Center Escape Beacon Objective
-  const ox = Math.round(map.objective.x * scaleX);
-  const oy = Math.round(map.objective.y * scaleY);
-  const beaconActive = state.objectiveActiveHiderIds.length > 0;
-  const beaconPulse = 3 + Math.round(Math.abs(Math.sin(timeSec * (beaconActive ? 7 : 3))) * 3);
-
-  ctx.strokeStyle = beaconActive ? '#10B981' : 'rgba(245, 158, 11, 0.8)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(ox - beaconPulse, oy - beaconPulse, beaconPulse * 2, beaconPulse * 2);
-  ctx.fillStyle = '#090D16';
-  ctx.fillRect(ox - 3, oy - 3, 6, 6);
-  ctx.fillStyle = beaconActive ? '#10B981' : '#F59E0B';
-  ctx.fillRect(ox - 2, oy - 2, 4, 4);
+  // 5. Escape Beacons (center + relays)
+  for (const obj of [map.objective, ...(map.extraObjectives ?? [])]) {
+    const ox = Math.round(obj.x * scaleX);
+    const oy = Math.round(obj.y * scaleY);
+    const beaconActive = state.objectiveActiveIds
+      ? state.objectiveActiveIds.includes(obj.id)
+      : state.objectiveActiveHiderIds.length > 0;
+    const isRelay = obj.id !== map.objective.id;
+    const beaconPulse = 3 + Math.round(Math.abs(Math.sin(timeSec * (beaconActive ? 7 : 3))) * 3);
+    ctx.strokeStyle = beaconActive ? '#10B981' : isRelay ? 'rgba(34, 211, 238, 0.8)' : 'rgba(245, 158, 11, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox - beaconPulse, oy - beaconPulse, beaconPulse * 2, beaconPulse * 2);
+    ctx.fillStyle = '#090D16';
+    ctx.fillRect(ox - 3, oy - 3, 6, 6);
+    ctx.fillStyle = beaconActive ? '#10B981' : isRelay ? '#22D3EE' : '#F59E0B';
+    ctx.fillRect(ox - 2, oy - 2, 4, 4);
+  }
 
   // 6. Teammate Hiders (visible to Hiders) & Seeker during head start
   for (const p of Object.values(state.players)) {
-    if (!p.alive || p.id === localPlayer?.id) continue;
+    if (!p.alive || p.masked || p.id === localPlayer?.id) continue;
     const px = Math.round(p.x * scaleX);
     const py = Math.round(p.y * scaleY);
 

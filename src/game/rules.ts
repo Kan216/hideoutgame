@@ -1,5 +1,5 @@
-import { MAPS } from './maps.ts';
-import type { MapConfig, MapId, HidingSpotConfig, WallRect, CharacterSkinId } from './maps.ts';
+import { MAPS, getMapObjectives } from './maps.ts';
+import type { MapConfig, MapId, HidingSpotConfig, WallRect, CharacterSkinId, ObjectiveConfig } from './maps.ts';
 
 export type MatchLifecycleState =
   | 'LOBBY'
@@ -34,6 +34,8 @@ export interface PlayerState {
   preHideX?: number;
   preHideY?: number;
   interactingWithObjective: boolean;
+  /** Which escape beacon the player is transmitting from (when interactingWithObjective). */
+  objectiveId?: string | null;
   eliminationsCount: number;
   inspectionsCount: number;
   objectiveSecondsContributed: number;
@@ -41,6 +43,19 @@ export interface PlayerState {
   connected: boolean;
   colorIndex: number;
   activeEmote?: { text: string; expiresAt: number } | null;
+  /** Global cooldown after leaving any hiding spot before the hider may hide again. */
+  rehideCooldownRemaining?: number;
+  /** Seconds the player is stunned (cannot move) after being flushed out of a spot. */
+  stunRemaining?: number;
+  /** Seconds the player stays revealed to every seeker (after being flushed out). */
+  revealedRemaining?: number;
+  /** Seeker who flushed this hider out (only they get the reveal). */
+  revealedById?: string | null;
+  /** Hider sprint burst: seconds of boosted speed left, and cooldown before the next burst. */
+  sprintRemaining?: number;
+  sprintCooldownRemaining?: number;
+  /** Set by `filterStateForViewer` when the viewer is not allowed to know this player's position. */
+  masked?: boolean;
 }
 
 export interface MatchConfig {
@@ -56,12 +71,47 @@ export interface MatchConfig {
   inspectCooldownMs: number; // Default 650 ms
   survivalTimerEnabled: boolean;
   survivalTimerSeconds: number; // Default 240s (4 minutes)
+  /** Hiders need at least this many beacon stages for a timeout to count as a hider win. */
+  timeoutHiderMinStages: number;
+  /** Global cooldown after exiting ANY spot before hiding again (stops spot-chaining). */
+  rehideCooldownSeconds: number;
+  /** Cooldown before the same spot can be reused by the same hider. */
+  spotReuseCooldownSeconds: number;
+  /** Stun applied to a hider flushed out by an inspection. */
+  flushStunSeconds: number;
+  /** Time a flushed hider stays visible to all seekers. */
+  flushRevealSeconds: number;
+  /** A seeker is busy (cannot move) for this long after searching an object. */
+  inspectRecoverySeconds: number;
+  /** Hider sprint burst (escape tool vs. the faster seeker). */
+  hiderSprintMultiplier: number;
+  hiderSprintSeconds: number;
+  hiderSprintCooldownSeconds: number;
+  /** While a beacon transmits it emits a noise ping this often (seconds). */
+  beaconNoiseIntervalSeconds: number;
+  /** Vision radius (line-of-sight required). */
+  seekerVisionRadius: number;
+  hiderVisionRadius: number;
+  /** Radius at which a MOVING enemy is heard even without line of sight. */
+  seekerHearingRadius: number;
+  hiderHearingRadius: number;
+}
+
+export type NoisePingKind = 'exit' | 'rustle' | 'flush' | 'footstep' | 'beacon';
+
+export interface NoisePing {
+  id: number;
+  kind: NoisePingKind;
+  x: number;
+  y: number;
+  ttl: number;
+  maxTtl: number;
 }
 
 export interface MatchEventLog {
   id: string;
   timestamp: number;
-  type: 'info' | 'hide' | 'inspect_empty' | 'elimination' | 'objective_stage' | 'victory';
+  type: 'info' | 'hide' | 'inspect_empty' | 'flush' | 'elimination' | 'objective_stage' | 'victory';
   message: string;
   x?: number;
   y?: number;
@@ -77,11 +127,17 @@ export interface MatchState {
   objectiveCompletedStages: number; // 0, 1, 2, or 3
   objectiveCurrentStageProgress: number; // 0 to 15
   objectiveActiveHiderIds: string[];
+  /** Per-beacon progress of the current stage (seconds). `objectiveCurrentStageProgress` mirrors the max. */
+  objectiveProgressById?: Record<string, number>;
+  /** Beacons currently being transmitted from. */
+  objectiveActiveIds?: string[];
   hidingOccupancy: Record<string, string | null>; // spotId -> playerId | null
   players: Record<string, PlayerState>;
   winner: 'hiders' | 'seekers' | null;
   winReason: string | null;
   events: MatchEventLog[];
+  /** Short-lived world-space sound cues that are visible through fog of war. */
+  noisePings?: NoisePing[];
 }
 
 export function formatMatchTime(totalSeconds: number): string {
@@ -101,10 +157,57 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   objectiveTotalStages: 3,
   objectiveStageDurationSeconds: 15,
   directEliminationRange: 58,
-  inspectCooldownMs: 600,
+  inspectCooldownMs: 1100,
   survivalTimerEnabled: true,
   survivalTimerSeconds: 240,
+  timeoutHiderMinStages: 1,
+  rehideCooldownSeconds: 3,
+  spotReuseCooldownSeconds: 8,
+  flushStunSeconds: 0.25,
+  flushRevealSeconds: 1.5,
+  inspectRecoverySeconds: 1.1,
+  beaconNoiseIntervalSeconds: 3,
+  hiderSprintMultiplier: 1.45,
+  hiderSprintSeconds: 2.2,
+  hiderSprintCooldownSeconds: 8,
+  seekerVisionRadius: 250,
+  hiderVisionRadius: 340,
+  seekerHearingRadius: 110,
+  hiderHearingRadius: 240,
 };
+
+let eventSeq = 0;
+
+/** Push an event to the front of the bounded match event log with a unique id. */
+export function pushMatchEvent(
+  state: MatchState,
+  type: MatchEventLog['type'],
+  message: string,
+  nowMs: number = Date.now(),
+  x?: number,
+  y?: number
+): MatchEventLog {
+  eventSeq = (eventSeq + 1) % 1_000_000;
+  const evt: MatchEventLog = { id: `evt_${nowMs}_${eventSeq}_${type}`, timestamp: nowMs, type, message, x, y };
+  state.events.unshift(evt);
+  if (state.events.length > 20) state.events.length = 20;
+  return evt;
+}
+
+let noiseSeq = 0;
+
+export function emitNoisePing(
+  state: MatchState,
+  kind: NoisePingKind,
+  x: number,
+  y: number,
+  ttl: number = 1.6
+): void {
+  if (!state.noisePings) state.noisePings = [];
+  noiseSeq = (noiseSeq + 1) % 1_000_000;
+  state.noisePings.push({ id: noiseSeq, kind, x, y, ttl, maxTtl: ttl });
+  if (state.noisePings.length > 24) state.noisePings.splice(0, state.noisePings.length - 24);
+}
 
 const RESERVED_IDENTITIES = new Set([
   'admin',
@@ -165,11 +268,34 @@ export function generateGuestName(seedNumber?: number): string {
   return `${adj}${noun}${num % 100}`;
 }
 
-export function getPlayerSpeed(role: PlayerRole, config: MatchConfig = DEFAULT_MATCH_CONFIG): number {
+export function getPlayerSpeed(
+  role: PlayerRole,
+  config: MatchConfig = DEFAULT_MATCH_CONFIG,
+  player?: Pick<PlayerState, 'sprintRemaining'>
+): number {
   if (role === 'seeker') {
     return config.hiderBaseSpeed * config.seekerSpeedMultiplier;
   }
+  if (player && (player.sprintRemaining ?? 0) > 0) {
+    return config.hiderBaseSpeed * (config.hiderSprintMultiplier ?? 1.45);
+  }
   return config.hiderBaseSpeed;
+}
+
+/** Hider sprint burst. Returns ok=false while on cooldown, hidden, stunned or not a living hider. */
+export function attemptSprint(state: MatchState, playerId: string): { ok: boolean; reason?: string } {
+  const p = state.players[playerId];
+  if (!p || p.role !== 'hider' || !p.alive) return { ok: false, reason: 'Only living hiders can sprint.' };
+  if (p.hiddenInSpotId !== null) return { ok: false, reason: 'Cannot sprint while hidden.' };
+  if (state.lifecycle !== 'HIDER_HEAD_START' && state.lifecycle !== 'SEEKER_RELEASED' && state.lifecycle !== 'MATCH_ACTIVE') {
+    return { ok: false, reason: 'Match is not active.' };
+  }
+  if ((p.sprintCooldownRemaining ?? 0) > 0) return { ok: false, reason: 'Sprint is recharging.' };
+  if ((p.stunRemaining ?? 0) > 0) return { ok: false, reason: 'Stunned.' };
+  p.sprintRemaining = state.config.hiderSprintSeconds ?? 2.2;
+  p.sprintCooldownRemaining = (state.config.hiderSprintCooldownSeconds ?? 8) + p.sprintRemaining;
+  p.interactingWithObjective = false;
+  return { ok: true };
 }
 
 export function circleIntersectsRect(
@@ -192,14 +318,32 @@ export function segmentIntersectsRect(
   y2: number,
   rect: { x: number; y: number; width: number; height: number }
 ): boolean {
-  const steps = 16;
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const px = x1 + (x2 - x1) * t;
-    const py = y1 + (y2 - y1) * t;
-    if (px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height) {
-      return true;
+  // Exact Liang–Barsky / slab clip of the segment against the AABB.
+  // Endpoints touching the rect boundary do not count (players stand next to walls).
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p: number, q: number): boolean => {
+    if (Math.abs(p) < 1e-9) return q >= 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
     }
+    return true;
+  };
+  if (
+    clip(-dx, x1 - rect.x) &&
+    clip(dx, rect.x + rect.width - x1) &&
+    clip(-dy, y1 - rect.y) &&
+    clip(dy, rect.y + rect.height - y1)
+  ) {
+    // Require a real overlap inside the segment (not only grazing an endpoint).
+    return t1 - t0 > 1e-6 && t0 < 1 - 1e-6 && t1 > 1e-6;
   }
   return false;
 }
@@ -325,7 +469,8 @@ export function resolvePlayerMovement(
     !player.alive ||
     player.hiddenInSpotId !== null ||
     state.lifecycle === 'MATCH_COMPLETED' ||
-    state.lifecycle === 'LOBBY'
+    state.lifecycle === 'LOBBY' ||
+    (player.stunRemaining ?? 0) > 0
   ) {
     return { x: player.x, y: player.y, vx: 0, vy: 0, facing: player.facing };
   }
@@ -341,7 +486,7 @@ export function resolvePlayerMovement(
   const normX = mag > 1e-4 ? inputX / Math.max(1, mag) : 0;
   const normY = mag > 1e-4 ? inputY / Math.max(1, mag) : 0;
 
-  const speed = getPlayerSpeed(player.role, state.config);
+  const speed = getPlayerSpeed(player.role, state.config, player);
   const vx = normX * speed;
   const vy = normY * speed;
 
@@ -424,6 +569,9 @@ export function createInitialMatchState(
     winner: null,
     winReason: null,
     events: [],
+    noisePings: [],
+    objectiveProgressById: {},
+    objectiveActiveIds: [],
   };
 }
 
@@ -477,6 +625,11 @@ export function startAuthoritativeMatch(
     p.hideTimerRemaining = 0;
     p.lastExitedSpotId = null;
     p.spotCooldownRemaining = 0;
+    p.rehideCooldownRemaining = 0;
+    p.stunRemaining = 0;
+    p.revealedRemaining = 0;
+    p.sprintRemaining = 0;
+    p.sprintCooldownRemaining = 0;
     p.interactingWithObjective = false;
     p.eliminationsCount = 0;
     p.inspectionsCount = 0;
@@ -524,17 +677,18 @@ export function startAuthoritativeMatch(
   state.objectiveCompletedStages = 0;
   state.objectiveCurrentStageProgress = 0;
   state.objectiveActiveHiderIds = [];
+  state.objectiveProgressById = {};
+  state.objectiveActiveIds = [];
   state.hidingOccupancy = hidingOccupancy;
   state.winner = null;
   state.winReason = null;
-  state.events = [
-    {
-      id: `evt_${Date.now()}_start`,
-      timestamp: Date.now(),
-      type: 'info',
-      message: `Match started on ${map.name}! Hiders have ${state.config.headStartSeconds}s head start.`,
-    },
-  ];
+  state.events = [];
+  state.noisePings = [];
+  pushMatchEvent(
+    state,
+    'info',
+    `Match started on ${map.name}! Hiders have ${state.config.headStartSeconds}s head start.`
+  );
 
   return state;
 }
@@ -566,6 +720,13 @@ export function attemptEnterHidingSpot(
   const currentOccupant = state.hidingOccupancy[spot.id];
   if (currentOccupant !== null && currentOccupant !== undefined) {
     return { ok: false, reason: 'This hiding place is already occupied!' };
+  }
+
+  if ((player.rehideCooldownRemaining ?? 0) > 0) {
+    return {
+      ok: false,
+      reason: `Catch your breath! You can hide again in ${Math.ceil(player.rehideCooldownRemaining ?? 0)}s.`,
+    };
   }
 
   if (
@@ -606,7 +767,8 @@ export function attemptEnterHidingSpot(
 
 export function attemptExitHidingSpot(
   state: MatchState,
-  playerId: string
+  playerId: string,
+  options: { emitNoise?: boolean } = {}
 ): { ok: boolean; reason?: string } {
   const player = state.players[playerId];
   if (!player) return { ok: false, reason: 'Player not found.' };
@@ -620,7 +782,8 @@ export function attemptExitHidingSpot(
   player.hiddenInSpotId = null;
   player.hideTimerRemaining = 0;
   player.lastExitedSpotId = spotId;
-  player.spotCooldownRemaining = 4;
+  player.spotCooldownRemaining = state.config.spotReuseCooldownSeconds ?? 8;
+  player.rehideCooldownRemaining = state.config.rehideCooldownSeconds ?? 3;
 
   const map = MAPS[state.config.mapId];
   const targetX =
@@ -638,13 +801,18 @@ export function attemptExitHidingSpot(
   player.preHideX = undefined;
   player.preHideY = undefined;
 
+  if (options.emitNoise !== false) {
+    emitNoisePing(state, 'exit', player.x, player.y, 1.4);
+  }
+
   return { ok: true };
 }
 
 export function attemptDirectElimination(
   state: MatchState,
   seekerId: string,
-  targetHiderId?: string
+  targetHiderId?: string,
+  nowMs: number = Date.now()
 ): { ok: boolean; eliminatedPlayerId?: string; reason?: string } {
   const seeker = state.players[seekerId];
   if (!seeker || seeker.role !== 'seeker' || !seeker.alive) {
@@ -682,16 +850,18 @@ export function attemptDirectElimination(
   bestTarget.interactingWithObjective = false;
   bestTarget.vx = 0;
   bestTarget.vy = 0;
+  bestTarget.stunRemaining = 0;
+  bestTarget.revealedRemaining = 0;
   seeker.eliminationsCount += 1;
 
-  state.events.unshift({
-    id: `evt_${Date.now()}_elim_${bestTarget.id}`,
-    timestamp: Date.now(),
-    type: 'elimination',
-    message: `${seeker.name} caught ${bestTarget.name} in the open!`,
-    x: bestTarget.x,
-    y: bestTarget.y,
-  });
+  pushMatchEvent(
+    state,
+    'elimination',
+    `${seeker.name} caught ${bestTarget.name}!`,
+    nowMs,
+    bestTarget.x,
+    bestTarget.y
+  );
 
   evaluateMatchWinConditions(state);
   return { ok: true, eliminatedPlayerId: bestTarget.id };
@@ -737,37 +907,51 @@ export function attemptInspectHidingSpot(
 
   seeker.lastInspectAt = nowMs;
   seeker.inspectionsCount += 1;
+  // Opening an object takes time: the seeker is rooted while searching.
+  seeker.stunRemaining = state.config.inspectRecoverySeconds ?? 0.9;
 
   const occupantId = state.hidingOccupancy[spot.id];
   if (occupantId && state.players[occupantId] && state.players[occupantId].alive) {
+    // FLUSH: the hider is dragged out into the open, briefly stunned and revealed.
+    // Hiders are still never eliminated *inside* an object — the seeker must catch them.
     const hider = state.players[occupantId];
-    const rem = Math.ceil(hider.hideTimerRemaining ?? state.config.maxHideDurationSeconds);
-    state.events.unshift({
-      id: `evt_${nowMs}_inspect_safe_${hider.id}`,
-      timestamp: nowMs,
-      type: 'info',
-      message: `${hider.name} is locked inside ${spot.label} (Protected for ${rem}s)!`,
-      x: spotCenterX,
-      y: spotCenterY,
-    });
-    return {
-      ok: false,
-      foundPlayerId: null,
-      spotLabel: spot.label,
-      reason: 'Hiders cannot be killed while hidden! Wait for their 15s hide timer to expire.',
-    };
+    attemptExitHidingSpot(state, hider.id, { emitNoise: false });
+    hider.stunRemaining = state.config.flushStunSeconds ?? 0.6;
+    hider.revealedRemaining = state.config.flushRevealSeconds ?? 3;
+    hider.revealedById = seeker.id;
+    emitNoisePing(state, 'flush', hider.x, hider.y, 1.8);
+    pushMatchEvent(
+      state,
+      'flush',
+      `${seeker.name} flushed ${hider.name} out of ${spot.label}!`,
+      nowMs,
+      hider.x,
+      hider.y
+    );
+    return { ok: true, foundPlayerId: hider.id, spotLabel: spot.label };
   }
 
-  state.events.unshift({
-    id: `evt_${nowMs}_inspect_empty_${spot.id}`,
-    timestamp: nowMs,
-    type: 'inspect_empty',
-    message: `${seeker.name} checked ${spot.label} — Empty.`,
-    x: spotCenterX,
-    y: spotCenterY,
-  });
+  pushMatchEvent(state, 'inspect_empty', `${seeker.name} checked ${spot.label} — Empty.`, nowMs, spotCenterX, spotCenterY);
 
   return { ok: true, foundPlayerId: null, spotLabel: spot.label };
+}
+
+/** Nearest escape beacon to a point, with its distance. */
+export function getNearestObjective(
+  map: MapConfig,
+  x: number,
+  y: number
+): { objective: ObjectiveConfig; dist: number } {
+  let best = map.objective;
+  let bestDist = Math.hypot(x - best.x, y - best.y);
+  for (const obj of getMapObjectives(map)) {
+    const d = Math.hypot(x - obj.x, y - obj.y);
+    if (d < bestDist) {
+      best = obj;
+      bestDist = d;
+    }
+  }
+  return { objective: best, dist: bestDist };
 }
 
 export function setObjectiveInteraction(
@@ -779,6 +963,7 @@ export function setObjectiveInteraction(
   if (!player) return { ok: false, reason: 'Player not found.' };
   if (!active) {
     player.interactingWithObjective = false;
+    player.objectiveId = null;
     return { ok: true };
   }
   if (player.role !== 'hider' || !player.alive || player.hiddenInSpotId !== null) {
@@ -795,17 +980,19 @@ export function setObjectiveInteraction(
   }
 
   const map = MAPS[state.config.mapId];
-  const dist = Math.hypot(player.x - map.objective.x, player.y - map.objective.y);
-  if (dist > map.objective.interactionRange) {
+  const { objective, dist } = getNearestObjective(map, player.x, player.y);
+  if (dist > objective.interactionRange) {
     player.interactingWithObjective = false;
-    return { ok: false, reason: 'Too far from the City-Center Beacon.' };
+    player.objectiveId = null;
+    return { ok: false, reason: 'Too far from an Escape Beacon.' };
   }
 
   player.interactingWithObjective = true;
+  player.objectiveId = objective.id;
   return { ok: true };
 }
 
-export function evaluateMatchWinConditions(state: MatchState): void {
+export function evaluateMatchWinConditions(state: MatchState, nowMs: number = Date.now()): void {
   if (state.lifecycle === 'MATCH_COMPLETED' || state.lifecycle === 'LOBBY') {
     return;
   }
@@ -813,60 +1000,55 @@ export function evaluateMatchWinConditions(state: MatchState): void {
   const hiders = Object.values(state.players).filter((p) => p.role === 'hider');
   const livingHiders = hiders.filter((p) => p.alive);
 
+  const finish = (winner: 'hiders' | 'seekers', reason: string, eventMessage: string) => {
+    state.lifecycle = 'MATCH_COMPLETED';
+    state.winner = winner;
+    state.winReason = reason;
+    state.objectiveCurrentStageProgress = 0;
+    state.objectiveActiveHiderIds = [];
+    pushMatchEvent(state, 'victory', eventMessage, nowMs);
+  };
+
   // 1. If all hiders are eliminated, seekers win immediately
   if (hiders.length > 0 && livingHiders.length === 0) {
-    state.lifecycle = 'MATCH_COMPLETED';
-    state.winner = 'seekers';
-    state.winReason = 'Every hider was discovered and eliminated!';
-    state.objectiveCurrentStageProgress = 0;
-    state.objectiveActiveHiderIds = [];
-    state.events.unshift({
-      id: `evt_${Date.now()}_win_seekers`,
-      timestamp: Date.now(),
-      type: 'victory',
-      message: 'SEEKER VICTORY — All hiders have been eliminated!',
-    });
+    finish('seekers', 'Every hider was discovered and eliminated!', 'SEEKER VICTORY — All hiders have been eliminated!');
     return;
   }
 
-  // 2. If all 3 objective stages are completed and at least 1 hider is alive, hiders win
-  if (
-    livingHiders.length > 0 &&
-    state.objectiveCompletedStages >= state.config.objectiveTotalStages
-  ) {
-    state.lifecycle = 'MATCH_COMPLETED';
-    state.winner = 'hiders';
-    state.winReason = `Hiders completed all ${state.config.objectiveTotalStages} City-Center Beacon stages!`;
-    state.objectiveCurrentStageProgress = 0;
-    state.objectiveActiveHiderIds = [];
-    state.events.unshift({
-      id: `evt_${Date.now()}_win_hiders_obj`,
-      timestamp: Date.now(),
-      type: 'victory',
-      message: 'HIDER VICTORY — Escape Beacon fully transmitted (3/3 Stages)!',
-    });
+  // 2. If all objective stages are completed and at least 1 hider is alive, hiders win
+  if (livingHiders.length > 0 && state.objectiveCompletedStages >= state.config.objectiveTotalStages) {
+    finish(
+      'hiders',
+      `Hiders completed all ${state.config.objectiveTotalStages} City-Center Beacon stages!`,
+      `HIDER VICTORY — Escape Beacon fully transmitted (${state.config.objectiveTotalStages}/${state.config.objectiveTotalStages} Stages)!`
+    );
     return;
   }
 
-  // 3. Optional survival timer if explicitly enabled in match config
+  // 3. Round timer: hiders must have made beacon progress to win on time (no pure stalling).
   if (
     state.config.survivalTimerEnabled &&
     livingHiders.length > 0 &&
     state.elapsedMatchSeconds >= state.config.survivalTimerSeconds
   ) {
-    state.lifecycle = 'MATCH_COMPLETED';
-    state.winner = 'hiders';
-    state.winReason = 'Hiders survived until the match timer expired!';
-    state.events.unshift({
-      id: `evt_${Date.now()}_win_hiders_time`,
-      timestamp: Date.now(),
-      type: 'victory',
-      message: 'HIDER VICTORY — Survived the full match timer!',
-    });
+    const minStages = state.config.timeoutHiderMinStages ?? 0;
+    if (state.objectiveCompletedStages >= minStages) {
+      finish('hiders', 'Hiders survived the clock with the beacon signal partly sent!', 'HIDER VICTORY — Survived the full match timer!');
+    } else {
+      finish(
+        'seekers',
+        `Time's up! Hiders never transmitted a beacon stage (${minStages} needed).`,
+        'SEEKER VICTORY — Hiders stalled and the beacon stayed dark!'
+      );
+    }
   }
 }
 
-export function stepAuthoritativeMatch(state: MatchState, dt: number): void {
+export function stepAuthoritativeMatch(
+  state: MatchState,
+  dt: number,
+  nowMs: number = Date.now()
+): void {
   const clampedDt = Math.min(Math.max(dt, 0), 0.1);
   if (
     state.lifecycle !== 'HIDER_HEAD_START' &&
@@ -878,24 +1060,25 @@ export function stepAuthoritativeMatch(state: MatchState, dt: number): void {
 
   const map = MAPS[state.config.mapId];
 
-  // Update 10-second head start countdown
+  // Update head start countdown
   if (state.lifecycle === 'HIDER_HEAD_START') {
     state.countdownRemaining = Math.max(0, state.countdownRemaining - clampedDt);
     if (state.countdownRemaining <= 0) {
       state.countdownRemaining = 0;
       state.lifecycle = 'MATCH_ACTIVE';
-      state.events.unshift({
-        id: `evt_${Date.now()}_seeker_released`,
-        timestamp: Date.now(),
-        type: 'info',
-        message: 'THE SEEKER IS RELEASED! Hunt begins now!',
-      });
+      pushMatchEvent(state, 'info', 'THE SEEKER IS RELEASED! Hunt begins now!', nowMs);
     }
   } else {
     state.elapsedMatchSeconds += clampedDt;
   }
 
-  // Enforce 15-second max hiding duration for hidden hiders & tick spot cooldowns
+  // Decay world noise pings
+  if (state.noisePings && state.noisePings.length > 0) {
+    for (const ping of state.noisePings) ping.ttl -= clampedDt;
+    state.noisePings = state.noisePings.filter((pg) => pg.ttl > 0);
+  }
+
+  // Tick player timers: cooldowns, stun, reveal and the max-hide timer
   const maxHideSecs = state.config.maxHideDurationSeconds ?? 15;
   for (const player of Object.values(state.players)) {
     if (player.spotCooldownRemaining && player.spotCooldownRemaining > 0) {
@@ -904,81 +1087,213 @@ export function stepAuthoritativeMatch(state: MatchState, dt: number): void {
         player.lastExitedSpotId = null;
       }
     }
+    if (player.rehideCooldownRemaining && player.rehideCooldownRemaining > 0) {
+      player.rehideCooldownRemaining = Math.max(0, player.rehideCooldownRemaining - clampedDt);
+    }
+    if (player.stunRemaining && player.stunRemaining > 0) {
+      player.stunRemaining = Math.max(0, player.stunRemaining - clampedDt);
+    }
+    if (player.sprintRemaining && player.sprintRemaining > 0) {
+      player.sprintRemaining = Math.max(0, player.sprintRemaining - clampedDt);
+    }
+    if (player.sprintCooldownRemaining && player.sprintCooldownRemaining > 0) {
+      player.sprintCooldownRemaining = Math.max(0, player.sprintCooldownRemaining - clampedDt);
+    }
+    if (player.revealedRemaining && player.revealedRemaining > 0) {
+      player.revealedRemaining = Math.max(0, player.revealedRemaining - clampedDt);
+    }
 
-    if (player.alive && player.role === 'hider' && player.hiddenInSpotId !== null) {
+    // The max-hide clock only runs once the seekers are hunting (hiding during the head start is free).
+    if (
+      player.alive &&
+      player.role === 'hider' &&
+      player.hiddenInSpotId !== null &&
+      state.lifecycle !== 'HIDER_HEAD_START'
+    ) {
       const prevRem =
         typeof player.hideTimerRemaining === 'number' ? player.hideTimerRemaining : maxHideSecs;
       const nextRem = Math.max(0, prevRem - clampedDt);
       player.hideTimerRemaining = nextRem;
 
+      // The hiding object starts rustling 3s before the hider is forced out — an audible tell.
+      if (prevRem > 3 && nextRem <= 3) {
+        emitNoisePing(state, 'rustle', player.x, player.y, 3);
+      }
+
       if (nextRem <= 0) {
         const expiredSpotId = player.hiddenInSpotId;
         const spotObj = map.hidingSpots.find((s) => s.id === expiredSpotId);
         attemptExitHidingSpot(state, player.id);
-        state.events.unshift({
-          id: `evt_${Date.now()}_hide_expired_${player.id}`,
-          timestamp: Date.now(),
-          type: 'hide',
-          message: `${player.name}'s ${maxHideSecs}s hide timer expired at ${spotObj?.label || 'hiding spot'}!`,
-          x: player.x,
-          y: player.y,
-        });
+        pushMatchEvent(
+          state,
+          'hide',
+          `${player.name}'s ${maxHideSecs}s hide timer expired at ${spotObj?.label || 'hiding spot'}!`,
+          nowMs,
+          player.x,
+          player.y
+        );
       }
     }
   }
 
-  // Validate objective interaction for all living hiders
+  // Validate objective interaction for all living hiders (per beacon)
+  const objectives = getMapObjectives(map);
+  const holdersByObjective: Record<string, string[]> = {};
   const activeHolders: string[] = [];
   for (const player of Object.values(state.players)) {
-    if (player.interactingWithObjective) {
-      const dist = Math.hypot(player.x - map.objective.x, player.y - map.objective.y);
-      if (
-        player.role !== 'hider' ||
-        !player.alive ||
-        player.hiddenInSpotId !== null ||
-        dist > map.objective.interactionRange
-      ) {
-        player.interactingWithObjective = false;
-      } else {
-        activeHolders.push(player.id);
-        player.objectiveSecondsContributed += clampedDt;
-      }
+    if (!player.interactingWithObjective) continue;
+    const obj = objectives.find((o) => o.id === player.objectiveId) ?? getNearestObjective(map, player.x, player.y).objective;
+    const dist = Math.hypot(player.x - obj.x, player.y - obj.y);
+    if (
+      player.role !== 'hider' ||
+      !player.alive ||
+      player.hiddenInSpotId !== null ||
+      dist > obj.interactionRange
+    ) {
+      player.interactingWithObjective = false;
+      player.objectiveId = null;
+    } else {
+      player.objectiveId = obj.id;
+      (holdersByObjective[obj.id] ??= []).push(player.id);
+      activeHolders.push(player.id);
+      player.objectiveSecondsContributed += clampedDt;
     }
   }
 
   state.objectiveActiveHiderIds = activeHolders;
+  state.objectiveActiveIds = Object.keys(holdersByObjective);
+  const progress = (state.objectiveProgressById ??= {});
 
-  // Objective progress: 3 separate stages of 15 uninterrupted seconds each
+  // Objective progress: N global stages; each stage needs uninterrupted seconds at ONE beacon.
   if (state.objectiveCompletedStages < state.config.objectiveTotalStages) {
-    if (activeHolders.length > 0) {
-      state.objectiveCurrentStageProgress += clampedDt;
-      if (state.objectiveCurrentStageProgress >= state.config.objectiveStageDurationSeconds) {
-        state.objectiveCompletedStages += 1;
-        state.objectiveCurrentStageProgress = 0;
+    let completedAt: ObjectiveConfig | null = null;
+    for (const obj of objectives) {
+      if (holdersByObjective[obj.id]) {
+        const before = progress[obj.id] ?? 0;
+        progress[obj.id] = before + clampedDt;
+        // Quiet for the first `interval * 2` seconds, then the antenna hums loudly every `interval`.
+        const interval = state.config.beaconNoiseIntervalSeconds ?? 3;
+        if (
+          progress[obj.id] >= interval * 2 &&
+          Math.floor(before / interval) !== Math.floor(progress[obj.id] / interval)
+        ) {
+          emitNoisePing(state, 'beacon', obj.x, obj.y, 2.2);
+        }
+        if (!completedAt && progress[obj.id] >= state.config.objectiveStageDurationSeconds) {
+          completedAt = obj;
+        }
+      } else {
+        // Interruption resets this beacon's current stage, completed stages are kept
+        progress[obj.id] = 0;
+      }
+    }
+    if (completedAt) {
+      state.objectiveCompletedStages += 1;
+      for (const obj of objectives) progress[obj.id] = 0;
+      pushMatchEvent(
+        state,
+        'objective_stage',
+        `Escape Stage ${state.objectiveCompletedStages}/${state.config.objectiveTotalStages} sent from ${completedAt.label}!`,
+        nowMs,
+        completedAt.x,
+        completedAt.y
+      );
+    }
+  }
+  let maxProgress = 0;
+  for (const v of Object.values(progress)) maxProgress = Math.max(maxProgress, v);
+  state.objectiveCurrentStageProgress = maxProgress;
 
-        state.events.unshift({
-          id: `evt_${Date.now()}_stage_${state.objectiveCompletedStages}`,
-          timestamp: Date.now(),
-          type: 'objective_stage',
-          message: `Escape Beacon Stage ${state.objectiveCompletedStages}/${state.config.objectiveTotalStages} Completed!`,
-          x: map.objective.x,
-          y: map.objective.y,
-        });
-      }
+  evaluateMatchWinConditions(state, nowMs);
+}
+
+/** Center point of a hiding spot. */
+export function getSpotCenter(spot: HidingSpotConfig): { x: number; y: number } {
+  return { x: spot.x + spot.width / 2, y: spot.y + spot.height / 2 };
+}
+
+/**
+ * Perception model shared by the renderer, the bots and the server's anti-cheat filter.
+ * - Teammates always know where each other are.
+ * - Hidden enemies are never perceived.
+ * - Revealed (flushed) hiders are perceived by every seeker.
+ * - Otherwise: inside vision radius with clear line-of-sight, or a MOVING enemy inside hearing radius.
+ */
+export function canPerceive(
+  state: MatchState,
+  viewer: PlayerState,
+  target: PlayerState,
+  map: MapConfig = MAPS[state.config.mapId]
+): boolean {
+  if (viewer.id === target.id) return true;
+  if (viewer.role === target.role) return true;
+  if (!target.alive) return true;
+  if (target.hiddenInSpotId !== null) return false;
+  if (
+    target.role === 'hider' &&
+    (target.revealedRemaining ?? 0) > 0 &&
+    (!target.revealedById || target.revealedById === viewer.id)
+  ) {
+    return true;
+  }
+  // During the head start everyone knows the seekers are locked in the precinct.
+  if (target.role === 'seeker' && state.lifecycle === 'HIDER_HEAD_START') return true;
+
+  const cfg = state.config;
+  const vision = viewer.role === 'seeker' ? cfg.seekerVisionRadius ?? 300 : cfg.hiderVisionRadius ?? 340;
+  const hearing = viewer.role === 'seeker' ? cfg.seekerHearingRadius ?? 130 : cfg.hiderHearingRadius ?? 240;
+  const dist = Math.hypot(viewer.x - target.x, viewer.y - target.y);
+  if (dist <= vision && hasLineOfSight(viewer.x, viewer.y, target.x, target.y, map.walls)) {
+    return true;
+  }
+  const moving = Math.hypot(target.vx, target.vy) > 1;
+  return moving && dist <= hearing;
+}
+
+/**
+ * Anti-cheat: build the state a specific client is allowed to receive.
+ * Seekers never learn hiding-spot occupancy or the position of hiders they cannot perceive;
+ * hiders never learn the position of seekers they cannot perceive. Eliminated players spectate with full info.
+ */
+export function filterStateForViewer(state: MatchState, viewerId: string): MatchState {
+  const viewer = state.players[viewerId];
+  const active =
+    state.lifecycle === 'HIDER_HEAD_START' ||
+    state.lifecycle === 'SEEKER_RELEASED' ||
+    state.lifecycle === 'MATCH_ACTIVE';
+  if (!viewer || !viewer.alive || !active) {
+    return state;
+  }
+
+  const map = MAPS[state.config.mapId];
+  const players: Record<string, PlayerState> = {};
+  for (const [id, p] of Object.entries(state.players)) {
+    if (canPerceive(state, viewer, p, map)) {
+      players[id] = p;
     } else {
-      // Interruption resets current stage progress to 0 while preserving completed stages
-      if (state.objectiveCurrentStageProgress > 0) {
-        state.objectiveCurrentStageProgress = 0;
-      }
+      players[id] = {
+        ...p,
+        x: -10000,
+        y: -10000,
+        vx: 0,
+        vy: 0,
+        hiddenInSpotId: null,
+        hideTimerRemaining: 0,
+        preHideX: undefined,
+        preHideY: undefined,
+        interactingWithObjective: false,
+        masked: true,
+      };
     }
   }
 
-  // Keep event log bounded
-  if (state.events.length > 20) {
-    state.events.length = 20;
+  let hidingOccupancy = state.hidingOccupancy;
+  if (viewer.role === 'seeker') {
+    hidingOccupancy = {};
+    for (const spotId of Object.keys(state.hidingOccupancy)) hidingOccupancy[spotId] = null;
   }
 
-  evaluateMatchWinConditions(state);
+  return { ...state, players, hidingOccupancy };
 }
 
 /**
@@ -994,10 +1309,11 @@ export interface ContextualActionPrompt {
 
 export function getAvailableContextualActions(
   state: MatchState,
-  playerId: string
+  playerId: string,
+  nowMs: number = Date.now()
 ): ContextualActionPrompt[] {
   const player = state.players[playerId];
-  if (!player || !player.alive) return [];
+  if (!player || !player.alive || player.masked) return [];
   if (
     state.lifecycle !== 'HIDER_HEAD_START' &&
     state.lifecycle !== 'SEEKER_RELEASED' &&
@@ -1025,10 +1341,11 @@ export function getAvailableContextualActions(
       return actions;
     }
 
-    // Check nearest available hiding spot
+    // Check nearest available hiding spot (none while catching breath after leaving a spot)
     let nearestSpot: HidingSpotConfig | null = null;
     let nearestSpotDist = Infinity;
-    for (const spot of map.hidingSpots) {
+    const canHideNow = (player.rehideCooldownRemaining ?? 0) <= 0 && (player.stunRemaining ?? 0) <= 0;
+    for (const spot of canHideNow ? map.hidingSpots : []) {
       if (state.hidingOccupancy[spot.id] !== null) continue;
       if (
         player.lastExitedSpotId === spot.id &&
@@ -1058,22 +1375,23 @@ export function getAvailableContextualActions(
       });
     }
 
-    // Check distance to City-Center Escape Beacon
-    const objDist = Math.hypot(player.x - map.objective.x, player.y - map.objective.y);
+    // Check distance to the nearest Escape Beacon
+    const { objective: nearObj, dist: objDist } = getNearestObjective(map, player.x, player.y);
     if (
-      objDist <= map.objective.interactionRange &&
+      objDist <= nearObj.interactionRange &&
       state.objectiveCompletedStages < state.config.objectiveTotalStages
     ) {
       const nextStage = state.objectiveCompletedStages + 1;
+      const prog = state.objectiveProgressById?.[nearObj.id] ?? 0;
       actions.push({
         action: 'objective',
         label: player.interactingWithObjective
           ? `Transmitting Stage ${nextStage}/${state.config.objectiveTotalStages}...`
-          : `Hold Objective (Stage ${nextStage}/${state.config.objectiveTotalStages})`,
-        sublabel: `${Math.ceil(
-          state.config.objectiveStageDurationSeconds - state.objectiveCurrentStageProgress
-        )}s uninterrupted needed`,
-        targetId: map.objective.id,
+          : `Hold Beacon (Stage ${nextStage}/${state.config.objectiveTotalStages})`,
+        sublabel: `${Math.ceil(state.config.objectiveStageDurationSeconds - prog)}s uninterrupted${
+          nearObj.id === map.objective.id ? '' : ' · Relay'
+        }`,
+        targetId: nearObj.id,
       });
     }
   } else if (player.role === 'seeker') {
@@ -1099,229 +1417,40 @@ export function getAvailableContextualActions(
     if (nearestHider) {
       actions.push({
         action: 'eliminate',
-        label: `Eliminate ${nearestHider.name}`,
+        label: `Catch ${nearestHider.name}`,
         sublabel: 'Direct close-range catch in the open',
         targetId: nearestHider.id,
       });
+    }
+
+    // Inspect the nearest hiding object (flushes out anyone inside)
+    if (nowMs - player.lastInspectAt >= state.config.inspectCooldownMs) {
+      let nearestSpot: HidingSpotConfig | null = null;
+      let nearestSpotDist = Infinity;
+      for (const spot of map.hidingSpots) {
+        if (!spot.canInspect) continue;
+        const c = getSpotCenter(spot);
+        const dist = Math.hypot(player.x - c.x, player.y - c.y);
+        if (
+          dist <= spot.interactionRange &&
+          dist < nearestSpotDist &&
+          hasLineOfSight(player.x, player.y, c.x, c.y, map.walls)
+        ) {
+          nearestSpot = spot;
+          nearestSpotDist = dist;
+        }
+      }
+      if (nearestSpot) {
+        actions.push({
+          action: 'inspect',
+          label: `Search ${nearestSpot.label}`,
+          sublabel: 'Flushes out any hider inside',
+          targetId: nearestSpot.id,
+        });
+      }
     }
   }
 
   return actions;
 }
 
-/**
- * Autonomous AI bot controller with 4 distinct behavior policies:
- * 1. stealth_hider: Finds an unoccupied hiding spot away from the seeker; exits if seeker passes far away to help objective.
- * 2. runner_hider: Pushes the 3-stage City-Center Beacon when seeker is > 280px away, ducks into nearby cover when threatened.
- * 3. patrol_seeker: Systematically visits and inspects hiding spots across street blocks and checks the central beacon.
- * 4. hunter_seeker: Sweeps high-traffic avenues, chases visible hiders, and inspects hiding spots near the beacon.
- */
-export function stepBotAI(
-  state: MatchState,
-  bot: PlayerState,
-  dt: number,
-  nowMs: number
-): void {
-  if (!bot.isBot || !bot.alive) return;
-  if (
-    state.lifecycle !== 'HIDER_HEAD_START' &&
-    state.lifecycle !== 'SEEKER_RELEASED' &&
-    state.lifecycle !== 'MATCH_ACTIVE'
-  ) {
-    return;
-  }
-
-  const map = MAPS[state.config.mapId];
-  const seekers = Object.values(state.players).filter((p) => p.role === 'seeker' && p.alive);
-  const hiders = Object.values(state.players).filter((p) => p.role === 'hider' && p.alive);
-
-  if (bot.role === 'hider') {
-    const nearestSeeker = seekers.reduce<{ p: PlayerState | null; dist: number }>(
-      (acc, s) => {
-        const d = Math.hypot(bot.x - s.x, bot.y - s.y);
-        return d < acc.dist ? { p: s, dist: d } : acc;
-      },
-      { p: null, dist: Infinity }
-    );
-
-    const seekerDanger =
-      state.lifecycle === 'MATCH_ACTIVE' && nearestSeeker.dist < 250;
-
-    // If hidden: stay hidden if seeker is near or if stealth policy during early hunt
-    if (bot.hiddenInSpotId) {
-      const shouldExitToHelpObjective =
-        !seekerDanger &&
-        nearestSeeker.dist > 400 &&
-        state.objectiveActiveHiderIds.length === 0 &&
-        (bot.botPolicy === 'runner_hider' || state.elapsedMatchSeconds > 20);
-      if (shouldExitToHelpObjective) {
-        attemptExitHidingSpot(state, bot.id);
-      }
-      return;
-    }
-
-    // If runner_hider and safe after head start, head to objective and hold it
-    if (
-      (bot.botPolicy === 'runner_hider' || state.elapsedMatchSeconds > 28) &&
-      !seekerDanger &&
-      state.lifecycle === 'MATCH_ACTIVE'
-    ) {
-      const distObj = Math.hypot(bot.x - map.objective.x, bot.y - map.objective.y);
-      if (distObj <= map.objective.interactionRange - 12) {
-        setObjectiveInteraction(state, bot.id, true);
-        return;
-      } else {
-        setObjectiveInteraction(state, bot.id, false);
-        const dx = map.objective.x - bot.x;
-        const dy = map.objective.y - bot.y;
-        const moved = resolvePlayerMovement(bot, dx, dy, dt, state, map);
-        bot.x = moved.x;
-        bot.y = moved.y;
-        bot.vx = moved.vx;
-        bot.vy = moved.vy;
-        bot.facing = moved.facing;
-        return;
-      }
-    }
-
-    setObjectiveInteraction(state, bot.id, false);
-
-    // Find best unoccupied hiding spot (skipping recently exited spot on cooldown)
-    let targetSpot: HidingSpotConfig | null = null;
-    let bestScore = Infinity;
-    for (const spot of map.hidingSpots) {
-      if (state.hidingOccupancy[spot.id] !== null) continue;
-      if (
-        bot.lastExitedSpotId === spot.id &&
-        bot.spotCooldownRemaining &&
-        bot.spotCooldownRemaining > 0
-      ) {
-        continue;
-      }
-      const cx = spot.x + spot.width / 2;
-      const cy = spot.y + spot.height / 2;
-      const distFromBot = Math.hypot(bot.x - cx, bot.y - cy);
-      const distFromSeeker = nearestSeeker.p
-        ? Math.hypot(nearestSeeker.p.x - cx, nearestSeeker.p.y - cy)
-        : 500;
-      const score = distFromBot - distFromSeeker * 0.35;
-      if (score < bestScore) {
-        bestScore = score;
-        targetSpot = spot;
-      }
-    }
-
-    if (targetSpot) {
-      const cx = targetSpot.x + targetSpot.width / 2;
-      const cy = targetSpot.y + targetSpot.height / 2;
-      const dist = Math.hypot(bot.x - cx, bot.y - cy);
-      if (dist <= targetSpot.interactionRange - 10 && hasLineOfSight(bot.x, bot.y, cx, cy, map.walls)) {
-        attemptEnterHidingSpot(state, bot.id, targetSpot.id);
-        return;
-      }
-      const moved = resolvePlayerMovement(bot, cx - bot.x, cy - bot.y, dt, state, map);
-      bot.x = moved.x;
-      bot.y = moved.y;
-      bot.vx = moved.vx;
-      bot.vy = moved.vy;
-      bot.facing = moved.facing;
-    }
-  } else {
-    // Seeker Bot AI
-    if (state.lifecycle === 'HIDER_HEAD_START') {
-      return;
-    }
-
-    // 1. Check direct elimination if any visible hider is in range
-    const actions = getAvailableContextualActions(state, bot.id);
-    const elimAction = actions.find((a) => a.action === 'eliminate');
-    if (elimAction) {
-      attemptDirectElimination(state, bot.id, elimAction.targetId);
-      return;
-    }
-
-    // 2. Chase visible unhidden hiders within 380px
-    let visibleTarget: PlayerState | null = null;
-    let visibleDist = Infinity;
-    for (const h of hiders) {
-      if (h.hiddenInSpotId !== null) continue;
-      const d = Math.hypot(bot.x - h.x, bot.y - h.y);
-      if (d < 380 && d < visibleDist && hasLineOfSight(bot.x, bot.y, h.x, h.y, map.walls)) {
-        visibleTarget = h;
-        visibleDist = d;
-      }
-    }
-
-    if (visibleTarget) {
-      const moved = resolvePlayerMovement(
-        bot,
-        visibleTarget.x - bot.x,
-        visibleTarget.y - bot.y,
-        dt,
-        state,
-        map
-      );
-      bot.x = moved.x;
-      bot.y = moved.y;
-      bot.vx = moved.vx;
-      bot.vy = moved.vy;
-      bot.facing = moved.facing;
-      return;
-    }
-
-    // 3. If objective is actively being held, rush to the City-Center Beacon!
-    if (state.objectiveCurrentStageProgress > 2.5) {
-      const moved = resolvePlayerMovement(
-        bot,
-        map.objective.x - bot.x,
-        map.objective.y - bot.y,
-        dt,
-        state,
-        map
-      );
-      bot.x = moved.x;
-      bot.y = moved.y;
-      bot.vx = moved.vx;
-      bot.vy = moved.vy;
-      bot.facing = moved.facing;
-      return;
-    }
-
-    // 4. Patrol & inspect hiding spots systematically
-    const spotIndex =
-      Math.floor(state.elapsedMatchSeconds / 4.5 + bot.colorIndex * 3) % map.hidingSpots.length;
-    const targetSpot = map.hidingSpots[spotIndex];
-    const cx = targetSpot.x + targetSpot.width / 2;
-    const cy = targetSpot.y + targetSpot.height / 2;
-    const dist = Math.hypot(bot.x - cx, bot.y - cy);
-
-    if (
-      dist <= targetSpot.interactionRange - 8 &&
-      nowMs - bot.lastInspectAt >= state.config.inspectCooldownMs + 900 &&
-      hasLineOfSight(bot.x, bot.y, cx, cy, map.walls)
-    ) {
-      attemptInspectHidingSpot(state, bot.id, targetSpot.id, nowMs);
-      return;
-    }
-
-    // Navigate along roads if blocked
-    let dirX = cx - bot.x;
-    let dirY = cy - bot.y;
-    const moved = resolvePlayerMovement(bot, dirX, dirY, dt, state, map);
-    if (Math.hypot(moved.x - bot.x, moved.y - bot.y) < 0.3) {
-      // Unstick around building corners by steering perpendicular
-      const altMoved = resolvePlayerMovement(bot, -dirY, dirX, dt, state, map);
-      bot.x = altMoved.x;
-      bot.y = altMoved.y;
-      bot.vx = altMoved.vx;
-      bot.vy = altMoved.vy;
-      bot.facing = altMoved.facing;
-    } else {
-      bot.x = moved.x;
-      bot.y = moved.y;
-      bot.vx = moved.vx;
-      bot.vy = moved.vy;
-      bot.facing = moved.facing;
-    }
-  }
-}

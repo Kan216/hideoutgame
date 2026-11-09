@@ -25,6 +25,8 @@
 | **Hide / Exit Hiding** | `E` or `Space` | Contextual `HIDE INSIDE` / `EXIT HIDING` Button |
 | **Inspect / Eliminate (Seeker)** | `E` or `Space` | Contextual `INSPECT OBJECT` / `ELIMINATE HIDER` Button |
 | **Hold Escape Beacon (Hider)** | Hold `F` (or click prompt) | Hold or Tap `HOLD BEACON` Button |
+| **Sprint Burst (Hider)** | `Shift` | `⚡ SPRINT` Button |
+| **Search Object (Seeker)** | `E` or `Space` near an object | `SEARCH OBJECT` Button |
 | **Pause / Settings** | `Esc` or `P` | Top-Right Pause Icon Button |
 | **Mute Audio** | `M` | Top-Right Audio Icon Button |
 
@@ -35,6 +37,9 @@ npm install
 
 # Run unit tests (Node native test runner)
 npm test
+
+# Headless bot-vs-bot balance simulation (matches per map, seeker count)
+npm run simulate -- 40 1
 
 # Start full-stack Express + WebSocket + Vite server on port 3000
 npm run dev

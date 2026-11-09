@@ -1,7 +1,9 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
-**Milestone 9 (Complete)**: Universal Mobile, Web & PC UI Ergonomics & Viewport Responsiveness — Redesigned Title screen with instant play CTAs above the fold on mobile landscape, horizontal swipe strips for maps and skins, non-wrapping 3-cluster in-game HUD with collapsible minimap, touch-scrollable modals (`scroll-touch`, `touch-pan-y`, `max-h-[95vh]`), notch/safe-area insets (`env(safe-area-inset-*)`), WebKit fullscreen fallbacks, and thumb-ergonomic virtual joystick and action buttons.
+**Milestone 10 (Complete, v2.0.0)**: Gameplay & visual overhaul — seeker search/flush, anti spot-chaining, hider sprint, two escape beacons with a signal-tower construction animation, fog of war + perception, server-side anti-cheat filtering, A* bots, headless balance simulation, online interpolation. See `docs/IMPROVEMENT_PLAN.md` and `docs/CHANGELOG.md`.
+
+**Previous — Milestone 9 (Complete)**: Universal Mobile, Web & PC UI Ergonomics & Viewport Responsiveness — Redesigned Title screen with instant play CTAs above the fold on mobile landscape, horizontal swipe strips for maps and skins, non-wrapping 3-cluster in-game HUD with collapsible minimap, touch-scrollable modals (`scroll-touch`, `touch-pan-y`, `max-h-[95vh]`), notch/safe-area insets (`env(safe-area-inset-*)`), WebKit fullscreen fallbacks, and thumb-ergonomic virtual joystick and action buttons.
 
 ## 2. Completed Subsystems
 - **Pure Authoritative Game Logic (`/src/game/rules.ts`, `/src/game/maps.ts`)**:
@@ -33,7 +35,7 @@
   - Web App Manifest (`public/manifest.json`) and vector PWA app icon (`public/icon.svg`).
 
 ## 3. Verification Status
-- `node --test src/game/rules.test.ts`: **10/10 unit tests passing** (movement physics, speed ratios, hiding protection, 15s timer, 76 hiding spot exits, guest identity validation, minimap projections, input magnitude clamping, line-of-sight wall checks, inspect cooldowns, and match lifecycle safety).
+- `node --test src/game/rules.test.ts`: **20/20 unit tests passing** (v2.0 adds flush, re-hide cooldown, head-start hide clock, timeout rule, two beacons, sprint, exact LOS, perception/anti-cheat filter, navigation reachability, bot match termination). Previously **10/10 unit tests passing** (movement physics, speed ratios, hiding protection, 15s timer, 76 hiding spot exits, guest identity validation, minimap projections, input magnitude clamping, line-of-sight wall checks, inspect cooldowns, and match lifecycle safety).
 - `npm run lint`: **Passing with 0 errors**.
 - `npm run build`: **Passing with 0 errors (Vite production bundle built cleanly)**.
 

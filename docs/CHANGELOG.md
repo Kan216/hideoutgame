@@ -1,5 +1,31 @@
 # Changelog — CITY HIDEOUT
 
+## [2.0.0] — 2026-11-09
+### Game logic
+- **Seekers can finally search objects**: human seekers get a `Search` contextual action (previously only bots could inspect). Searching an occupied object **flushes** the hider out (stunned 0.25s, revealed 1.5s to that seeker); the seeker is busy for 1.1s, so a quick hider can escape.
+- **Anti spot-chaining**: 3s global re-hide cooldown after leaving any spot + 8s same-spot cooldown (was 4s same-spot only).
+- **Hide clock starts with the hunt**: hiding during the 10s head start no longer burns the 15s hide timer.
+- **Rustle tell**: hiding objects rustle (noise ping + wobble) 3s before the hider is forced out.
+- **Hider sprint burst** (`Shift` / ⚡ button): 1.45× for 2.2s, 8s cooldown.
+- **Two escape beacons per map**: central beacon + far-corner relay. Stages are global; each beacon tracks its own uninterrupted progress. Beacons hum (noise ping) after 6s of transmission.
+- **Timeout rule**: hiders win on time only with ≥1 completed beacon stage (no more pure stalling).
+- **Fog of war / perception** (`canPerceive`): vision radius + line of sight, or hearing a moving enemy nearby.
+- **Exact line of sight** (slab clipping) replaces 16-sample ray marching that could see through thin walls.
+- **Injectable time** (`nowMs`) for rules, unique event ids via `pushMatchEvent`, noise pings (`state.noisePings`).
+### AI bots (`src/game/bots.ts`, `src/game/navigation.ts`)
+- A* nav-grid pathfinding with string-pulling; bots no longer get stuck on buildings.
+- Fair bots: seekers use only their own perception, remember last-seen positions, investigate noise pings and search nearby objects; hiders spread out, rotate spots before the timer expires, flee out of line of sight, sprint when chased, and pick the safer beacon.
+- `npm run simulate` headless balance simulation. 1v4 bot-only seeker win rate moved from 100% (≈40s matches) to ≈70–75% (≈100s matches).
+### Multiplayer
+- **Anti-cheat state filtering**: the server sends each client only what its player may know (`filterStateForViewer`): no occupancy or unseen hider positions for seekers, no unseen seekers for hiders.
+- Smoother online play: remote players are interpolated; the local player keeps its prediction with soft reconciliation instead of snapping to every 25Hz snapshot.
+### Visuals & feel (`src/game/worldFx.ts`)
+- Fog of war with a real-time visibility polygon, streetlight pools and glowing beacons.
+- **Signal tower construction animation**: tiers assemble block by block with a swinging crane, welding sparks, progress ring/%, a sky beam that strengthens per tier, and energy links from transmitting hiders.
+- Relay beacon pad, noise-ping rings (exit / rustle / flush / beacon), wobbling hiding objects, stunned/searching/revealed/sprint overlays, footstep dust.
+- Hit-stop + screen flash + shake on catches, smooth look-ahead camera, `prefers-reduced-motion` support, larger particle pool.
+- Unified event FX pipeline (online + offline, including bot catches that previously had no feedback).
+
 ## [1.9.0] — 2026-11-01
 ### Fixed & Improved
 - **Universal Mobile, Web & PC UI Ergonomics & Viewport Responsiveness**:

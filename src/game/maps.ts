@@ -141,6 +141,8 @@ export interface MapConfig {
     radius: number;
     interactionRange: number;
   };
+  /** Optional secondary escape beacons (see EXTRA_OBJECTIVES). */
+  extraObjectives?: Array<MapConfig['objective']>;
   roads: MapRoad[];
   walls: WallRect[];
   props: MapProp[];
@@ -798,3 +800,36 @@ export const MAPS: Record<MapId, MapConfig> = {
   },
 };
 
+
+export type ObjectiveConfig = MapConfig['objective'];
+
+/**
+ * Secondary escape beacons. Hiders can transmit from ANY beacon, which forces seekers to
+ * split their attention between the central plaza and a far-corner relay.
+ * Positions were picked with a nav-clearance scan (60px wall-free radius, away from hiding spots).
+ */
+const EXTRA_OBJECTIVES: Record<MapId, ObjectiveConfig[]> = {
+  downtown_plaza: [
+    { id: 'relay_downtown_se', label: 'SE Rooftop Radio Relay', x: 1480, y: 840, radius: 30, interactionRange: 80 },
+  ],
+  harbor_district: [
+    { id: 'relay_harbor_se', label: 'Dockside Lighthouse Relay', x: 1640, y: 900, radius: 30, interactionRange: 80 },
+  ],
+  modern_mall: [
+    { id: 'relay_modern_se', label: 'Parking Deck Antenna Relay', x: 1480, y: 840, radius: 30, interactionRange: 80 },
+  ],
+  mystic_sanctuary: [
+    { id: 'relay_mystic_se', label: 'Moonstone Waystone Relay', x: 1640, y: 900, radius: 30, interactionRange: 80 },
+  ],
+};
+
+for (const id of Object.keys(EXTRA_OBJECTIVES) as MapId[]) {
+  MAPS[id].extraObjectives = EXTRA_OBJECTIVES[id];
+}
+
+/** All escape beacons on a map: the central beacon first, then relays. */
+export function getMapObjectives(map: MapConfig): ObjectiveConfig[] {
+  return map.extraObjectives && map.extraObjectives.length > 0
+    ? [map.objective, ...map.extraObjectives]
+    : [map.objective];
+}

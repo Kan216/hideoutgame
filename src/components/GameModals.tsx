@@ -315,28 +315,28 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
         <div className="mt-5 space-y-4 text-sm text-slate-300 leading-relaxed">
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
             <h3 className="font-display font-bold text-emerald-400 text-base">
-              1. HIDER TEAM RULES (100% Speed · 10s Head Start · 15s Max Hide Time)
+              1. HIDER TEAM RULES (100% Speed · 10s Head Start · 15s Max Hide · ⚡ Sprint)
             </h3>
             <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Spawn in the City Center and use the <strong>10-second countdown</strong> while the Seeker is locked in the Precinct zone. Approach any of the <strong>18–20 hiding objects</strong> and press <span className="font-mono text-amber-300">E</span> (or tap <strong>HIDE</strong>) to conceal yourself. While hidden inside an object, <strong>the Killer cannot kill you</strong>—but you can only stay hidden for a <strong>maximum of 15 seconds</strong> before you automatically come out!
+              Spawn in the City Center and use the <strong>10-second countdown</strong> to find cover. Press <span className="font-mono text-amber-300">E</span> (or tap <strong>HIDE</strong>) next to any hiding object. While hidden <strong>you cannot be caught</strong>, but you may only stay <strong>15 seconds</strong> once the hunt starts — the object starts <strong>rustling</strong> 3s before you are forced out. After leaving any spot you must <strong>catch your breath for 3s</strong> before hiding again. Press <span className="font-mono text-amber-300">SHIFT</span> (or tap <strong>⚡ SPRINT</strong>) for a short burst faster than the Seeker — use it to break line of sight.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
             <h3 className="font-display font-bold text-amber-400 text-base">
-              2. THREE-STAGE ESCAPE BEACON OBJECTIVE (3 × 15s)
+              2. BUILD THE ESCAPE SIGNAL (2 beacons · 3 tiers × 15s)
             </h3>
             <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              To win before all hiders are caught, return to the <strong>City-Center Signal Beacon</strong> and hold <span className="font-mono text-amber-300">F</span> (or tap <strong>HOLD BEACON</strong>). Complete <strong>3 separate stages of 15 uninterrupted seconds each</strong> (45s total). If interrupted, only the active stage resets—completed stages are locked in!
+              Hold <span className="font-mono text-amber-300">F</span> (or tap <strong>HOLD BEACON</strong>) at the <strong>City-Center Beacon</strong> or the far-corner <strong>Relay</strong>. Every <strong>15 uninterrupted seconds</strong> builds one tier of the signal tower — build <strong>3 tiers</strong> to escape. Leaving resets only the tier under construction. After 6s the antenna starts <strong>humming</strong>, which Seekers can hear from far away. If the clock runs out, hiders win only if at least one tier was built.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
             <h3 className="font-display font-bold text-red-400 text-base">
-              3. SEEKER TEAM RULES (120% Speed · Open-Street Catch)
+              3. SEEKER TEAM RULES (120% Speed · Limited Vision · Search &amp; Catch)
             </h3>
             <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Released after the 10-second countdown at <strong>1.2× movement speed</strong>. Hidden hiders are protected while inside an object, so hunt hiders moving between cover, guard the City-Center Beacon, or wait for their <strong>15-second hide timer</strong> to force them out into the open (<span className="font-mono text-amber-300">E / Space</span> to Eliminate).
+              Released after the 10-second countdown at <strong>1.2× speed</strong>. You only see what is in your <strong>line of sight</strong> — watch for noise rings (doors opening, rustling objects, humming beacons). Press <span className="font-mono text-amber-300">E / Space</span> next to an object to <strong>Search</strong> it: anyone inside is <strong>flushed out</strong>, briefly stunned and revealed — but searching takes you a moment too. Catch hiders in the open with <span className="font-mono text-amber-300">E / Space</span>.
             </p>
           </div>
 
