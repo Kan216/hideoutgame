@@ -1,5 +1,13 @@
 # Changelog — CITY HIDEOUT
 
+## [2.3.0] — 2026-11-09
+### Added — Burmese (မြန်မာ) language
+- `src/i18n.tsx`: English + Burmese dictionaries (~210 strings), `t()`, `useLang()`, `setLang()`, `rich()` for help texts; choice saved in `localStorage` (`ch_lang`), auto-selects Burmese when the browser language is `my`.
+- Language toggle on the title screen (🌐) and in the pause menu.
+- Translated: title screen, HUD, action prompts (rebuilt client-side via `localizeActions`), mobile buttons, power names, in-world effect texts, pause / game-over / how-to-play / lobby screens.
+- Server events and win reasons now carry `key` + `params` (`MatchEventLog.key/params`, `winReasonKey`) so each player sees toasts in their own language; old clients still get the English `message`.
+- Noto Sans Myanmar web font added to all font stacks; slightly taller line height for Burmese.
+
 ## [2.2.1] — 2026-11-09
 ### Fixed
 - Desktop HUD: the hider ability strip (sprint / power / shield chips) and the spectator banner floated in the middle of the screen because the HUD column used `justify-between` across separate children; they are now grouped with the action prompt at the bottom.

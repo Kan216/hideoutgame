@@ -187,6 +187,9 @@ export interface MatchEventLog {
   message: string;
   x?: number;
   y?: number;
+  /** Translation key + parameters so clients can show the event in their own language. */
+  key?: string;
+  params?: Record<string, string | number>;
 }
 
 export interface MatchState {
@@ -207,6 +210,9 @@ export interface MatchState {
   players: Record<string, PlayerState>;
   winner: 'hiders' | 'seekers' | null;
   winReason: string | null;
+  /** Translation key (+ params) for winReason. */
+  winReasonKey?: string | null;
+  winReasonParams?: Record<string, string | number>;
   events: MatchEventLog[];
   /** Short-lived world-space sound cues that are visible through fog of war. */
   noisePings?: NoisePing[];
@@ -279,10 +285,11 @@ export function pushMatchEvent(
   message: string,
   nowMs: number = Date.now(),
   x?: number,
-  y?: number
+  y?: number,
+  i18n?: { key: string; params?: Record<string, string | number> }
 ): MatchEventLog {
   eventSeq = (eventSeq + 1) % 1_000_000;
-  const evt: MatchEventLog = { id: `evt_${nowMs}_${eventSeq}_${type}`, timestamp: nowMs, type, message, x, y };
+  const evt: MatchEventLog = { id: `evt_${nowMs}_${eventSeq}_${type}`, timestamp: nowMs, type, message, x, y, ...i18n };
   state.events.unshift(evt);
   if (state.events.length > 20) state.events.length = 20;
   return evt;
@@ -797,7 +804,11 @@ export function startAuthoritativeMatch(
   pushMatchEvent(
     state,
     'info',
-    `Match started on ${map.name}! Hiders have ${state.config.headStartSeconds}s head start.`
+    `Match started on ${map.name}! Hiders have ${state.config.headStartSeconds}s head start.`,
+    Date.now(),
+    undefined,
+    undefined,
+    { key: 'matchStarted', params: { map: map.name, secs: state.config.headStartSeconds } }
   );
 
   return state;
@@ -969,7 +980,10 @@ export function attemptDirectElimination(
       bestTarget.y = pushY;
     }
     emitNoisePing(state, 'flush', bestTarget.x, bestTarget.y, 1.2);
-    pushMatchEvent(state, 'power', `🛡️ ${bestTarget.name}'s shield blocked ${seeker.name}!`, nowMs, bestTarget.x, bestTarget.y);
+    pushMatchEvent(state, 'power', `🛡️ ${bestTarget.name}'s shield blocked ${seeker.name}!`, nowMs, bestTarget.x, bestTarget.y, {
+      key: 'shieldBlocked',
+      params: { hider: bestTarget.name, seeker: seeker.name },
+    });
     return { ok: false, reason: 'Shield blocked the catch!' };
   }
 
@@ -987,7 +1001,8 @@ export function attemptDirectElimination(
     `${seeker.name} caught ${bestTarget.name}!`,
     nowMs,
     bestTarget.x,
-    bestTarget.y
+    bestTarget.y,
+    { key: 'caught', params: { seeker: seeker.name, hider: bestTarget.name } }
   );
 
   evaluateMatchWinConditions(state);
@@ -1056,12 +1071,16 @@ export function attemptInspectHidingSpot(
       `${seeker.name} flushed ${hider.name} out of ${spot.label}!`,
       nowMs,
       hider.x,
-      hider.y
+      hider.y,
+      { key: 'flushed', params: { seeker: seeker.name, hider: hider.name, spot: spot.label } }
     );
     return { ok: true, foundPlayerId: hider.id, spotLabel: spot.label };
   }
 
-  pushMatchEvent(state, 'inspect_empty', `${seeker.name} checked ${spot.label} — Empty.`, nowMs, spotCenterX, spotCenterY);
+  pushMatchEvent(state, 'inspect_empty', `${seeker.name} checked ${spot.label} — Empty.`, nowMs, spotCenterX, spotCenterY, {
+    key: 'inspectEmpty',
+    params: { seeker: seeker.name, spot: spot.label },
+  });
 
   return { ok: true, foundPlayerId: null, spotLabel: spot.label };
 }
@@ -1130,18 +1149,26 @@ export function evaluateMatchWinConditions(state: MatchState, nowMs: number = Da
   const hiders = Object.values(state.players).filter((p) => p.role === 'hider');
   const livingHiders = hiders.filter((p) => p.alive);
 
-  const finish = (winner: 'hiders' | 'seekers', reason: string, eventMessage: string) => {
+  const finish = (
+    winner: 'hiders' | 'seekers',
+    reason: string,
+    eventMessage: string,
+    key: string,
+    params: Record<string, string | number> = {}
+  ) => {
     state.lifecycle = 'MATCH_COMPLETED';
     state.winner = winner;
     state.winReason = reason;
+    state.winReasonKey = key;
+    state.winReasonParams = params;
     state.objectiveCurrentStageProgress = 0;
     state.objectiveActiveHiderIds = [];
-    pushMatchEvent(state, 'victory', eventMessage, nowMs);
+    pushMatchEvent(state, 'victory', eventMessage, nowMs, undefined, undefined, { key: `${key}Event`, params });
   };
 
   // 1. If all hiders are eliminated, seekers win immediately
   if (hiders.length > 0 && livingHiders.length === 0) {
-    finish('seekers', 'Every hider was discovered and eliminated!', 'SEEKER VICTORY — All hiders have been eliminated!');
+    finish('seekers', 'Every hider was discovered and eliminated!', 'SEEKER VICTORY — All hiders have been eliminated!', 'winAllCaught');
     return;
   }
 
@@ -1150,7 +1177,9 @@ export function evaluateMatchWinConditions(state: MatchState, nowMs: number = Da
     finish(
       'hiders',
       `Hiders completed all ${state.config.objectiveTotalStages} City-Center Beacon stages!`,
-      `HIDER VICTORY — Escape Beacon fully transmitted (${state.config.objectiveTotalStages}/${state.config.objectiveTotalStages} Stages)!`
+      `HIDER VICTORY — Escape Beacon fully transmitted (${state.config.objectiveTotalStages}/${state.config.objectiveTotalStages} Stages)!`,
+      'winEscaped',
+      { total: state.config.objectiveTotalStages }
     );
     return;
   }
@@ -1163,12 +1192,14 @@ export function evaluateMatchWinConditions(state: MatchState, nowMs: number = Da
   ) {
     const minStages = state.config.timeoutHiderMinStages ?? 0;
     if (state.objectiveCompletedStages >= minStages) {
-      finish('hiders', 'Hiders survived the clock with the beacon signal partly sent!', 'HIDER VICTORY — Survived the full match timer!');
+      finish('hiders', 'Hiders survived the clock with the beacon signal partly sent!', 'HIDER VICTORY — Survived the full match timer!', 'winSurvived');
     } else {
       finish(
         'seekers',
         `Time's up! Hiders never transmitted a beacon stage (${minStages} needed).`,
-        'SEEKER VICTORY — Hiders stalled and the beacon stayed dark!'
+        'SEEKER VICTORY — Hiders stalled and the beacon stayed dark!',
+        'winStalled',
+        { n: minStages }
       );
     }
   }
@@ -1196,7 +1227,7 @@ export function stepAuthoritativeMatch(
     if (state.countdownRemaining <= 0) {
       state.countdownRemaining = 0;
       state.lifecycle = 'MATCH_ACTIVE';
-      pushMatchEvent(state, 'info', 'THE SEEKER IS RELEASED! Hunt begins now!', nowMs);
+      pushMatchEvent(state, 'info', 'THE SEEKER IS RELEASED! Hunt begins now!', nowMs, undefined, undefined, { key: 'released' });
     }
   } else {
     state.elapsedMatchSeconds += clampedDt;
@@ -1270,7 +1301,8 @@ export function stepAuthoritativeMatch(
           `${player.name}'s ${maxHideSecs}s hide timer expired at ${spotObj?.label || 'hiding spot'}!`,
           nowMs,
           player.x,
-          player.y
+          player.y,
+          { key: 'hideExpired', params: { hider: player.name, secs: maxHideSecs, spot: spotObj?.label || '' } }
         );
       }
     }
@@ -1338,7 +1370,11 @@ export function stepAuthoritativeMatch(
         `Escape Stage ${state.objectiveCompletedStages}/${state.config.objectiveTotalStages} sent from ${completedAt.label}!`,
         nowMs,
         completedAt.x,
-        completedAt.y
+        completedAt.y,
+        {
+          key: 'stageDone',
+          params: { n: state.objectiveCompletedStages, total: state.config.objectiveTotalStages, beacon: completedAt.label },
+        }
       );
     }
   }
@@ -1720,7 +1756,10 @@ export function stepPowerUps(state: MatchState, dt: number, nowMs: number, map: 
         s.vy = 0;
         mines.splice(i, 1);
         emitNoisePing(state, 'flush', m.x, m.y, 1.5);
-        pushMatchEvent(state, 'power', `💣 ${s.name} stepped on a mine!`, nowMs, m.x, m.y);
+        pushMatchEvent(state, 'power', `💣 ${s.name} stepped on a mine!`, nowMs, m.x, m.y, {
+          key: 'mineHit',
+          params: { seeker: s.name },
+        });
         break;
       }
     }

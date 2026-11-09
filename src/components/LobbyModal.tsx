@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CHARACTER_SKINS, CharacterSkinId, MapId, MAPS } from '../game/maps';
 import { MatchState, PlayerRole, validateGuestDisplayName } from '../game/rules';
 import { soundFX } from '../game/sound';
+import { t } from '../i18n';
 
 interface LobbyModalProps {
   guestId: string;
@@ -70,7 +71,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
     e.preventDefault();
     const res = validateGuestDisplayName(nameInput);
     if (!res.valid) {
-      setNameError(res.error || 'Invalid display name');
+      setNameError(res.error || t('lobby.nameInvalid'));
       return;
     }
     setNameError(null);
@@ -113,12 +114,12 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-800">
           <div>
             <h2 id="lobby-heading" className="text-2xl sm:text-3xl font-display font-extrabold tracking-tight text-white">
-              MATCH STAGING &amp; CHARACTER SELECT
+              {t('lobby.title')}
             </h2>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Guest Session Active · ID: <span className="font-mono text-slate-300">{guestId}</span> ·{' '}
+              {t('lobby.session')} <span className="font-mono text-slate-300">{guestId}</span> ·{' '}
               <span className={wsConnected ? 'text-emerald-400' : 'text-amber-400'}>
-                {wsConnected ? 'Online Server Connected' : 'Offline Mode Ready'}
+                {wsConnected ? t('lobby.connected') : t('lobby.offline')}
               </span>
             </p>
           </div>
@@ -127,7 +128,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
             onClick={onCloseToTitle}
             className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors whitespace-nowrap shrink-0"
           >
-            Back to Title
+            {t('lobby.back')}
           </button>
         </div>
 
@@ -145,7 +146,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
           <form onSubmit={handleSaveName} className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-[200px]">
               <label htmlFor="guest-display-name" className="block text-xs font-medium text-slate-400 mb-1">
-                Guest Display Name (2–18 chars, no password or email required)
+                {t('lobby.nameLabel')}
               </label>
               <input
                 id="guest-display-name"
@@ -160,13 +161,13 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
               type="submit"
               className="min-h-[44px] px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-medium text-sm border border-slate-700 transition-colors whitespace-nowrap shrink-0"
             >
-              Update Name
+              {t('lobby.nameUpdate')}
             </button>
           </form>
 
           <div>
             <span className="block text-xs font-medium text-slate-400 mb-1.5">
-              Select Character Sprite (Modern Interiors · Mystic Woods · Brackeys Knights &amp; Slimes)
+              {t('lobby.charLabel')}
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               {CHARACTER_SKINS.map((sk) => {
@@ -200,10 +201,10 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
           <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
             <div>
               <h3 className="text-lg font-display font-bold text-white">
-                01. Online Room with Friends
+                {t('lobby.onlineTitle')}
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Create an authoritative room code or join a friend&apos;s room across desktop, mobile, or browser.
+                {t('lobby.onlineDesc')}
               </p>
 
               {!onlineRoomState ? (
@@ -213,12 +214,12 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                     onClick={() => onCreateOnlineRoom(selectedMap, selectedSeekers, botCount)}
                     className="w-full min-h-[48px] px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm transition-colors"
                   >
-                    Create Room &amp; Generate Code
+                    {t('lobby.create')}
                   </button>
 
                   <div className="pt-3 border-t border-slate-800">
                     <label htmlFor="join-room-code-input" className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Have an Invite Code? Enter 6-Character Room Code:
+                      {t('lobby.joinLabel')}
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -239,7 +240,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                         }}
                         className="min-h-[44px] px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-display font-bold text-sm transition-colors whitespace-nowrap shrink-0"
                       >
-                        Join Room
+                        {t('lobby.join')}
                       </button>
                     </div>
                   </div>
@@ -249,7 +250,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                   {/* Active Room Code Banner */}
                   <div className="p-3.5 rounded-xl bg-slate-900 border border-amber-500/40 flex items-center justify-between">
                     <div>
-                      <span className="text-xs text-slate-400 block">ACTIVE ROOM CODE</span>
+                      <span className="text-xs text-slate-400 block">{t('lobby.activeCode')}</span>
                       <span
                         data-testid="active-room-code"
                         className="text-2xl font-mono font-bold tracking-widest text-amber-400"
@@ -263,21 +264,21 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                         onClick={handleCopyRoomCode}
                         className="min-h-[44px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 cursor-pointer"
                       >
-                        {copiedCode ? 'Copied Code!' : 'Copy Code'}
+                        {copiedCode ? t('lobby.copiedCode') : t('lobby.copyCode')}
                       </button>
                       <button
                         type="button"
                         onClick={handleCopyInviteLink}
                         className="min-h-[44px] px-3.5 py-2 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-xs font-medium text-emerald-200 border border-emerald-700/60 cursor-pointer"
                       >
-                        {copiedLink ? 'Link Copied!' : '📋 Invite Link'}
+                        {copiedLink ? t('lobby.linkCopied') : t('lobby.inviteLink')}
                       </button>
                       <button
                         type="button"
                         onClick={onLeaveOnlineRoom}
                         className="min-h-[44px] px-3 py-2 rounded-lg bg-red-950/80 hover:bg-red-900 text-xs font-medium text-red-200 border border-red-800/60 cursor-pointer"
                       >
-                        Leave
+                        {t('lobby.leave')}
                       </button>
                     </div>
                   </div>
@@ -285,7 +286,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                   {/* Connected Players Roster */}
                   <div>
                     <div className="text-xs font-medium text-slate-400 mb-2">
-                      Connected Players ({playersList.length})
+                      {t('lobby.players', { n: playersList.length })}
                     </div>
                     <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
                       {playersList.map((p) => (
@@ -294,16 +295,16 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                           className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-800 text-xs"
                         >
                           <span className="font-mono font-medium text-slate-200 truncate">
-                            {p.name} {p.id === guestId ? '(You)' : ''}
+                            {p.name} {p.id === guestId ? t('lobby.you') : ''}
                           </span>
                           <span className="text-slate-400">
                             {p.id === onlineRoomState.hostId
-                              ? 'Host'
+                              ? t('lobby.host')
                               : p.isBot
-                              ? 'AI Bot'
+                              ? t('lobby.bot')
                               : p.connected
-                              ? 'Ready'
-                              : 'Disconnected'}
+                              ? t('lobby.ready')
+                              : t('lobby.disconnected')}
                           </span>
                         </div>
                       ))}
@@ -316,11 +317,11 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                       onClick={() => onStartOnlineMatch(preferredRole)}
                       className="w-full min-h-[48px] px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-base transition-colors"
                     >
-                      Launch Online Match Now
+                      {t('lobby.launch')}
                     </button>
                   ) : (
                     <div className="p-3 rounded-xl bg-slate-900 text-center text-xs text-amber-300">
-                      Waiting for Room Host to launch the match...
+                      {t('lobby.waiting')}
                     </div>
                   )}
                 </div>
@@ -332,13 +333,13 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
           <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
             <div className="space-y-4">
               <h3 className="text-lg font-display font-bold text-white">
-                02. Map &amp; Ruleset Configuration
+                {t('lobby.configTitle')}
               </h3>
 
               {/* Map Selection */}
               <div>
                 <span className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Select Playable Map (4 Maps · 76 Total Hiding Objects)
+                  {t('lobby.mapLabel')}
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {(
@@ -372,8 +373,10 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                       >
                         <div className="font-display font-bold text-xs sm:text-sm truncate">{m.name}</div>
                         <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                          {m.hidingSpots.length} Spots · Rec: {m.recommendedSeekers}{' '}
-                          {m.recommendedSeekers === 1 ? 'Seeker' : 'Seekers'}
+                          {t('lobby.mapMeta', {
+                            n: m.hidingSpots.length,
+                            seekers: m.recommendedSeekers === 1 ? t('lobby.seekers1') : t('lobby.seekers2'),
+                          })}
                         </div>
                       </button>
                     );
@@ -385,7 +388,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Seeker Count
+                    {t('lobby.seekerCount')}
                   </span>
                   <div className="flex gap-2">
                     {([1, 2] as const).map((cnt) => {
@@ -409,7 +412,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                               : 'bg-slate-900 border-slate-800 text-slate-400'
                           }`}
                         >
-                          {cnt} {cnt === 1 ? 'Seeker' : 'Seekers'}
+                          {cnt === 1 ? t('lobby.seekers1') : t('lobby.seekers2')}
                         </button>
                       );
                     })}
@@ -419,7 +422,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                 {/* Preferred Role */}
                 <div>
                   <span className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Your Preferred Role
+                    {t('lobby.role')}
                   </span>
                   <div className="flex gap-2">
                     {(['hider', 'seeker'] as const).map((r) => (
@@ -435,7 +438,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                             : 'bg-slate-900 border-slate-800 text-slate-400'
                         }`}
                       >
-                        {r}
+                        {t(`lobby.role.${r}`)}
                       </button>
                     ))}
                   </div>
@@ -445,7 +448,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
               {/* AI Companion / Opponent Bots Count */}
               <div>
                 <span className="block text-xs font-medium text-slate-400 mb-1.5">
-                  AI Squad Bots (For solo practice or filling rooms: {botCount} bots)
+                  {t('lobby.bots', { n: botCount })}
                 </span>
                 <div className="flex gap-2">
                   {[0, 1, 3, 5].map((b) => (
@@ -465,7 +468,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                           : 'bg-slate-900 border-slate-800 text-slate-400'
                       }`}
                     >
-                      {b === 0 ? '0 (Humans)' : `${b} Bots`}
+                      {b === 0 ? t('lobby.bots0') : t('lobby.botsN', { n: b })}
                     </button>
                   ))}
                 </div>
@@ -486,7 +489,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                 }
                 className="w-full min-h-[48px] px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 font-display font-bold text-sm transition-colors"
               >
-                Start Instant Offline Match ({preferredRole.toUpperCase()} + {Math.max(1, botCount)} AI Bots)
+                {t('lobby.offlineStart', { role: t(`lobby.role.${preferredRole}`), n: Math.max(1, botCount) })}
               </button>
             </div>
           </div>

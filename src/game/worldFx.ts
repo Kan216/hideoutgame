@@ -1,6 +1,7 @@
 import type { MapConfig, ObjectiveConfig, WallRect } from './maps.ts';
 import type { MatchState, NoisePing, PlayerState, PowerPickup, MineState, SmokeCloud } from './rules.ts';
 import { POWER_INFO } from './rules.ts';
+import { t as tr } from '../i18n';
 
 /**
  * Client-only world effects: vision polygon + fog of war, ambient lighting, noise-ping rings,
@@ -268,9 +269,9 @@ export function drawRelayBase(ctx: CanvasRenderingContext2D, o: ObjectiveConfig,
   ctx.font = 'bold 9px "PixelOperator8", monospace';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#090D16';
-  ctx.fillText('RELAY', x + 1, y + 35);
+  ctx.fillText(tr('fx.relay'), x + 1, y + 35);
   ctx.fillStyle = '#67E8F9';
-  ctx.fillText('RELAY', x, y + 34);
+  ctx.fillText(tr('fx.relay'), x, y + 34);
 }
 
 const BLOCKS_PER_TIER = 8;
@@ -462,7 +463,7 @@ export function drawPlayerStatusFx(
       ctx.fillRect(sx - 1, sy - 1, 3, 3);
     }
     const label =
-      p.stunKind === 'mine' ? 'BOOM! STUNNED' : p.stunKind === 'shield' ? 'BLOCKED!' : isSeeker ? 'searching…' : '';
+      p.stunKind === 'mine' ? tr('fx.stunMine') : p.stunKind === 'shield' ? tr('fx.stunShield') : isSeeker ? tr('fx.searching') : '';
     if (label) {
       ctx.font = 'bold 9px "PixelOperator8", monospace';
       ctx.textAlign = 'center';

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { PlayerRole } from '../game/rules';
+import { PlayerRole, POWER_INFO, POWER_KINDS } from '../game/rules';
+import { t, rich, useLang, setLang, powerSnack, powerName, powerDesc } from '../i18n';
 
 export interface EndOfRunStatsSnapshot {
   winner: 'hiders' | 'seekers';
@@ -38,6 +39,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onRestart,
   onExitToTitle,
 }) => {
+  const lang = useLang();
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto scroll-touch touch-pan-y overscroll-contain flex items-start sm:items-center justify-center p-2.5 sm:p-4 bg-[#070A12]/90"
@@ -53,28 +55,28 @@ export const PauseModal: React.FC<PauseModalProps> = ({
     >
       <div className="w-full max-w-md bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-6 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
         <h2 id="pause-modal-title" className="text-2xl font-display font-extrabold text-white tracking-tight">
-          GAME PAUSED
+          {t('pause.title')}
         </h2>
         <p className="text-xs text-slate-400 mt-1">
-          Adjust controls or resume the urban hide-and-seek match.
+          {t('pause.subtitle')}
         </p>
 
         {/* Settings Controls */}
         <div className="mt-5 space-y-4 bg-[#0B0F19] p-4 rounded-xl border border-slate-800">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-300">Sound Synthesizer</span>
+            <span className="text-xs font-medium text-slate-300">{t('pause.sound')}</span>
             <button
               type="button"
               onClick={onToggleMute}
               className="min-h-[44px] px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-amber-300 border border-slate-700"
             >
-              {muted ? 'MUTED (OFF)' : 'AUDIO ON'}
+              {muted ? t('pause.muted') : t('pause.audioOn')}
             </button>
           </div>
 
           <div>
             <span className="block text-xs font-medium text-slate-300 mb-1.5">
-              Mobile On-Screen Touch Controls
+              {t('pause.touch')}
             </span>
             <div className="grid grid-cols-3 gap-2">
               {(['auto', 'on', 'off'] as const).map((m) => (
@@ -88,7 +90,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                       : 'bg-slate-900 text-slate-400 border-slate-800'
                   }`}
                 >
-                  {m}
+                  {t(`pause.touch.${m}`)}
                 </button>
               ))}
             </div>
@@ -96,7 +98,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
 
           <div>
             <label htmlFor="sensitivity-slider" className="flex justify-between text-xs font-medium text-slate-300 mb-1">
-              <span>Joystick Sensitivity</span>
+              <span>{t('pause.sensitivity')}</span>
               <span className="font-mono text-amber-300">{joystickSensitivity.toFixed(1)}x</span>
             </label>
             <input
@@ -112,7 +114,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-            <span className="text-xs font-medium text-slate-300">Display Mode</span>
+            <span className="text-xs font-medium text-slate-300">{t('pause.display')}</span>
             <button
               type="button"
               onClick={() => {
@@ -124,8 +126,28 @@ export const PauseModal: React.FC<PauseModalProps> = ({
               }}
               className="min-h-[44px] px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-sky-300 border border-slate-700 cursor-pointer"
             >
-              ⛶ Toggle Fullscreen
+              {t('pause.fullscreen')}
             </button>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <span className="text-xs font-medium text-slate-300">🌐 {t('lang.label')}</span>
+            <div className="flex gap-1.5">
+              {(['en', 'my'] as const).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => setLang(l)}
+                  className={`min-h-[44px] px-3 py-2 rounded-lg text-xs font-bold border cursor-pointer ${
+                    lang === l
+                      ? 'bg-violet-600 text-white border-violet-300'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  {l === 'en' ? 'English' : 'မြန်မာ'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -136,21 +158,21 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             onClick={onResume}
             className="w-full min-h-[48px] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-sm transition-colors"
           >
-            Resume Match
+            {t('pause.resume')}
           </button>
           <button
             type="button"
             onClick={onRestart}
             className="w-full min-h-[48px] py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm transition-colors"
           >
-            Restart Round
+            {t('pause.restart')}
           </button>
           <button
             type="button"
             onClick={onExitToTitle}
             className="w-full min-h-[48px] py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-display font-bold text-sm transition-colors"
           >
-            Leave Session to Main Menu
+            {t('pause.leave')}
           </button>
         </div>
       </div>
@@ -178,13 +200,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const [copiedStats, setCopiedStats] = useState(false);
 
   const handleCopyStats = () => {
-    const text = `🎮 CITY HIDEOUT Match Result:\n${
-      playerWon ? '🏆 VICTORY' : '💀 DEFEAT'
-    } as ${snapshot.localRole.toUpperCase()}!\n⏱️ Match Time: ${Math.round(
-      snapshot.elapsedSeconds
-    )}s | Beacon Stages: ${snapshot.stagesCompleted}/${snapshot.totalStages}\nPlay now: ${
-      typeof window !== 'undefined' ? window.location.origin : ''
-    }`;
+    const text = t('over.shareText', {
+      result: playerWon ? t('over.shareWin') : t('over.shareLose'),
+      role: snapshot.localRole === 'seeker' ? t('hud.seeker') : t('hud.hider'),
+      secs: Math.round(snapshot.elapsedSeconds),
+      n: snapshot.stagesCompleted,
+      total: snapshot.totalStages,
+      url: typeof window !== 'undefined' ? window.location.origin : '',
+    });
     navigator.clipboard?.writeText(text).catch(() => {});
     setCopiedStats(true);
     setTimeout(() => setCopiedStats(false), 2000);
@@ -205,7 +228,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     >
       <div className="w-full max-w-lg bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-8 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
         <div className="text-xs font-mono uppercase tracking-widest text-amber-400">
-          {snapshot.winner === 'hiders' ? 'HIDER TEAM VICTORY' : 'SEEKER TEAM VICTORY'}
+          {snapshot.winner === 'hiders' ? t('over.hidersWin') : t('over.seekersWin')}
         </div>
         <h2
           id="gameover-modal-title"
@@ -213,27 +236,27 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             playerWon ? 'text-emerald-400' : 'text-red-400'
           }`}
         >
-          {playerWon ? 'VICTORY — MISSION COMPLETE' : 'DEFEAT — MATCH OVER'}
+          {playerWon ? t('over.victory') : t('over.defeat')}
         </h2>
         <p className="text-sm text-slate-300 mt-1.5">{snapshot.winReason}</p>
 
         {/* 3 Tabular-Nums Stat Tiles */}
         <div className="mt-6 grid grid-cols-3 gap-3">
           <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3.5">
-            <div className="text-[11px] font-mono uppercase text-slate-400">BEACON STAGES</div>
+            <div className="text-[11px] font-mono uppercase text-slate-400">{t('over.stages')}</div>
             <div className="text-2xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
               {snapshot.stagesCompleted}/{snapshot.totalStages}
             </div>
           </div>
           <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3.5">
-            <div className="text-[11px] font-mono uppercase text-slate-400">MATCH TIME</div>
+            <div className="text-[11px] font-mono uppercase text-slate-400">{t('over.time')}</div>
             <div className="text-2xl font-mono font-bold text-amber-400 tabular-nums mt-1">
               {Math.round(snapshot.elapsedSeconds)}s
             </div>
           </div>
           <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3.5">
             <div className="text-[11px] font-mono uppercase text-slate-400">
-              {snapshot.localRole === 'seeker' ? 'ELIMINATIONS' : 'HIDERS ALIVE'}
+              {snapshot.localRole === 'seeker' ? t('over.elims') : t('over.alive')}
             </div>
             <div className="text-2xl font-mono font-bold text-sky-400 tabular-nums mt-1">
               {snapshot.localRole === 'seeker'
@@ -251,28 +274,28 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             onClick={onPlayAgain}
             className="flex-1 min-h-[48px] px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-sm transition-colors cursor-pointer"
           >
-            Play Again
+            {t('over.again')}
           </button>
           <button
             type="button"
             onClick={handleCopyStats}
             className="min-h-[48px] px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-display font-bold text-sm border border-amber-500/40 transition-colors cursor-pointer"
           >
-            {copiedStats ? 'Copied Stats!' : '📋 Share Stats'}
+            {copiedStats ? t('over.copied') : t('over.share')}
           </button>
           <button
             type="button"
             onClick={onOpenLobby}
             className="min-h-[48px] px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-display font-bold text-sm transition-colors cursor-pointer"
           >
-            Lobby
+            {t('over.lobby')}
           </button>
           <button
             type="button"
             onClick={onExitToTitle}
             className="min-h-[48px] px-3.5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 font-display font-bold text-sm transition-colors cursor-pointer"
           >
-            Menu
+            {t('over.menu')}
           </button>
         </div>
       </div>
@@ -299,68 +322,50 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
       aria-labelledby="howto-title"
     >
       <div className="w-full max-w-2xl bg-[#111827] border-2 border-slate-700 rounded-2xl p-4 sm:p-8 shadow-2xl text-slate-100 my-2 sm:my-auto max-h-[95vh] sm:max-h-[92vh] overflow-y-auto scroll-touch touch-pan-y">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <h2 id="howto-title" className="text-2xl font-display font-extrabold text-white">
-            HOW TO PLAY — CITY HIDEOUT
+        <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <h2 id="howto-title" className="text-xl sm:text-2xl font-display font-extrabold text-white">
+            {t('how.title')}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200"
+            className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 shrink-0"
           >
-            Close
+            {t('how.close')}
           </button>
         </div>
 
         <div className="mt-5 space-y-4 text-sm text-slate-300 leading-relaxed">
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
-            <h3 className="font-display font-bold text-emerald-400 text-base">
-              1. HIDER TEAM RULES (100% Speed · 10s Head Start · 15s Max Hide · ⚡ Sprint)
-            </h3>
-            <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Spawn in the City Center and use the <strong>10-second countdown</strong> to find cover. Press <span className="font-mono text-amber-300">E</span> (or tap <strong>HIDE</strong>) next to any hiding object. While hidden <strong>you cannot be caught</strong>, but you may only stay <strong>15 seconds</strong> once the hunt starts — the object starts <strong>rustling</strong> 3s before you are forced out. After leaving any spot you must <strong>catch your breath for 3s</strong> before hiding again. Press <span className="font-mono text-amber-300">SHIFT</span> (or tap <strong>⚡ SPRINT</strong>) for a short burst faster than the Seeker — use it to break line of sight.
-            </p>
+            <h3 className="font-display font-bold text-emerald-400 text-base">{t('how.h1')}</h3>
+            <p className="mt-1 text-xs sm:text-sm text-slate-300">{rich(t('how.p1'))}</p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
-            <h3 className="font-display font-bold text-amber-400 text-base">
-              2. BUILD THE ESCAPE SIGNAL (2 beacons · 3 tiers × 15s)
-            </h3>
-            <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Hold <span className="font-mono text-amber-300">F</span> (or tap <strong>HOLD BEACON</strong>) at the <strong>City-Center Beacon</strong> or the far-corner <strong>Relay</strong>. Every <strong>15 uninterrupted seconds</strong> builds one tier of the signal tower — build <strong>3 tiers</strong> to escape. Leaving resets only the tier under construction. After 6s the antenna starts <strong>humming</strong>, which Seekers can hear from far away. If the clock runs out, hiders win only if at least one tier was built.
-            </p>
+            <h3 className="font-display font-bold text-amber-400 text-base">{t('how.h2')}</h3>
+            <p className="mt-1 text-xs sm:text-sm text-slate-300">{rich(t('how.p2'))}</p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
-            <h3 className="font-display font-bold text-violet-300 text-base">
-              ★ HIDER SNACK POWERS (walk over to eat · <span className="font-mono">Q</span> / tap to use)
-            </h3>
+            <h3 className="font-display font-bold text-violet-300 text-base">{rich(t('how.h3'))}</h3>
             <ul className="mt-1 text-xs sm:text-sm text-slate-300 space-y-0.5">
-              <li>👻 <strong>Ghost Candy</strong> — Invisibility Cloak: seekers can’t see or hear you for 8s (unless they bump into you).</li>
-              <li>🛡️ <strong>Iron Apple</strong> — Shield for 12s: blocks one catch and stuns the seeker.</li>
-              <li>💣 <strong>Pop Rocks</strong> — 2 hidden mines (15s each) that stun a seeker for 2.5s.</li>
-              <li>💨 <strong>Smoke Pie</strong> — 7s smoke cloud that seekers can’t see through.</li>
-              <li>🍩 <strong>Energy Donut</strong> — +25% speed for 10s.</li>
+              {POWER_KINDS.map((k) => (
+                <li key={k}>
+                  {POWER_INFO[k].icon} <strong>{powerSnack(k)}</strong> — {powerName(k)}: {powerDesc(k)}
+                </li>
+              ))}
             </ul>
-            <p className="mt-1 text-[11px] text-slate-400">You can carry one snack at a time. New snacks appear around the city every few seconds.</p>
+            <p className="mt-1 text-[11px] text-slate-400">{t('how.p3')}</p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
-            <h3 className="font-display font-bold text-red-400 text-base">
-              3. SEEKER TEAM RULES (120% Speed · Limited Vision · Search &amp; Catch)
-            </h3>
-            <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Released after the 10-second countdown at <strong>1.2× speed</strong>. You only see what is in your <strong>line of sight</strong> — watch for noise rings (doors opening, rustling objects, humming beacons). Press <span className="font-mono text-amber-300">E / Space</span> next to an object to <strong>Search</strong> it: anyone inside is <strong>flushed out</strong>, briefly stunned and revealed — but searching takes you a moment too. Catch hiders in the open with <span className="font-mono text-amber-300">E / Space</span>.
-            </p>
+            <h3 className="font-display font-bold text-red-400 text-base">{t('how.h4')}</h3>
+            <p className="mt-1 text-xs sm:text-sm text-slate-300">{rich(t('how.p4'))}</p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
-            <h3 className="font-display font-bold text-sky-400 text-base">
-              4. GUEST PRIVACY & PERSISTENCE GUARANTEES
-            </h3>
-            <p className="mt-1 text-xs sm:text-sm text-slate-300">
-              Guest play requires zero email, password, or personal data. Your guest session token and local match stats are stored in your device&apos;s browser storage so you can reconnect to active rooms. Clearing browser data, uninstalling, or switching devices will reset your local guest profile.
-            </p>
+            <h3 className="font-display font-bold text-sky-400 text-base">{t('how.h5')}</h3>
+            <p className="mt-1 text-xs sm:text-sm text-slate-300">{t('how.p5')}</p>
           </div>
         </div>
       </div>

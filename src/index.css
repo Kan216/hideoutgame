@@ -22,9 +22,9 @@
 
 @layer base {
   :root {
-    --font-display: 'Outfit', system-ui, sans-serif;
-    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', 'PixelOperator8', monospace;
+    --font-display: 'Outfit', 'Noto Sans Myanmar', 'Myanmar Text', system-ui, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', 'Noto Sans Myanmar', 'Myanmar Text', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'PixelOperator8', 'Noto Sans Myanmar', 'Myanmar Text', monospace;
   }
 
   body {
@@ -89,3 +89,8 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Burmese script has tall stacked glyphs: give text a little more room and no forced uppercase spacing */
+html.lang-my body { line-height: 1.6; }
+html.lang-my .uppercase { letter-spacing: 0 !important; }
+html.lang-my .truncate { line-height: 1.7; }

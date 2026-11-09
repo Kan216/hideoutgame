@@ -1,6 +1,8 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
+**v2.3.0**: English / Burmese (မြန်မာ) language switch (`src/i18n.tsx`).
+
 **v2.2.0**: `/stats` player & match stats dashboard + `/api/stats`. 29/29 tests.
 
 **v2.1.0**: edible hider powers (cloak, shield, mines, smoke, speed). 26/26 tests.

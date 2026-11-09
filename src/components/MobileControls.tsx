@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ContextualActionPrompt, POWER_INFO, PowerKind } from '../game/rules';
+import { t, powerName } from '../i18n';
 
 interface MobileControlsProps {
   visible: boolean;
@@ -174,7 +175,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
             className="h-8 sm:h-10 short:h-8! px-2.5 sm:px-3 short:px-2! rounded-lg sm:rounded-xl short:rounded-lg! bg-[#090D16]/90 border border-slate-700 hover:bg-slate-800 text-[11px] sm:text-xs font-mono font-bold text-amber-300 shadow flex items-center gap-1.5"
           >
             <span>💬</span>
-            <span className="text-[10px] sm:text-[11px] font-sans short:hidden">Callout</span>
+            <span className="text-[10px] sm:text-[11px] font-sans short:hidden">{t('btn.callout')}</span>
           </button>
         )}
 
@@ -188,7 +189,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
             {heldPower && (
               <button
                 type="button"
-                aria-label={`Use ${POWER_INFO[heldPower].power}`}
+                aria-label={`${t('btn.use')} ${powerName(heldPower)}`}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   onUsePower?.();
@@ -196,7 +197,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 className="relative w-[58px] h-[58px] sm:w-[64px] sm:h-[64px] short:w-[50px]! short:h-[50px]! rounded-2xl border-2 shadow-xl flex flex-col items-center justify-center active:scale-95 transition-transform bg-violet-700/95 border-violet-200 text-white animate-pulse"
               >
                 <span className="text-2xl short:text-xl leading-none">{POWER_INFO[heldPower].icon}</span>
-                <span className="text-[9px] font-display font-bold leading-tight short:hidden">USE</span>
+                <span className="text-[9px] font-display font-bold leading-tight short:hidden">{t('btn.use')}</span>
                 {heldCharges > 1 && (
                   <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold flex items-center justify-center border border-slate-900">
                     {heldCharges}
@@ -226,7 +227,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
             }`}
           >
             <span className="text-lg leading-none">⚡</span>
-            <span>{sprinting ? 'GO!' : sprintCooldown > 0 ? `${Math.ceil(sprintCooldown)}s` : 'SPRINT'}</span>
+            <span>{sprinting ? t('btn.go') : sprintCooldown > 0 ? `${Math.ceil(sprintCooldown)}s` : t('btn.sprint')}</span>
           </button>
         )}
 
@@ -263,7 +264,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     : 'bg-amber-500 text-slate-950 border-amber-200'
                 }`}
               >
-                <span>{isHoldingObjective ? 'HOLDING BEACON...' : 'HOLD BEACON'}</span>
+                <span>{isHoldingObjective ? t('btn.holding') : t('btn.holdBeacon')}</span>
                 <span className="text-[10px] sm:text-[11px] font-mono opacity-90 short:hidden">{act.sublabel}</span>
               </button>
             );
@@ -289,12 +290,12 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
             >
               <span>
                 {act.action === 'hide'
-                  ? 'HIDE INSIDE'
+                  ? t('btn.hide')
                   : act.action === 'exit_hide'
-                  ? 'EXIT HIDING'
+                  ? t('btn.exit')
                   : act.action === 'eliminate'
-                  ? 'CATCH HIDER'
-                  : 'SEARCH OBJECT'}
+                  ? t('btn.catch')
+                  : t('btn.search')}
               </span>
               <span className="text-[10px] sm:text-[11px] font-sans font-medium opacity-90 truncate max-w-[160px] short:hidden">
                 {act.label}

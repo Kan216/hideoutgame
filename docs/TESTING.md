@@ -20,6 +20,9 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 ### Balance simulation
 `npm run simulate [matchesPerMap] [seekerCount]` — headless bot-vs-bot. Latest (30/map, 1v4): Downtown 87%, Harbor 63%, Modern 83%, Mystic 67% seeker wins (≈75% overall, ≈100s matches). 2v5 bot-only is still 100% seeker — see IMPROVEMENT_PLAN follow-ups.
 
+### v2.3.0 Burmese language
+- Playwright with `ch_lang=my`: title, how-to-play, in-game HUD + action prompt + toasts, pause menu (language toggle), phone landscape controls — Burmese renders with Noto Sans Myanmar, no layout overflow, 0 console errors; English default unchanged.
+
 ### v2.2.0 stats
 - `src/server/statsTracker.test.ts` (3): counting & win rate & averages, abandoned matches (restart/disconnect/8-min timeout), 24h timeline cap + save/reload.
 - E2E against the dev server with `STATS_KEY`: 401 without key; `?autostart=1` local match counted live (report queued until WS ready); quitting → "quit early"; forced finish → seeker win with duration; online room match counted. Dashboard rendered at 1280×900 (light) and 390×844 (dark) with real and sample data: no horizontal overflow, 0 console errors.

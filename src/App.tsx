@@ -51,6 +51,7 @@ import {
   stepAndDrawFloatingTexts,
 } from './game/pixelSprites';
 import { soundFX } from './game/sound';
+import { t, useLang, setLang, eventText, winReasonText, powerName, powerSnack, powerDesc, localizeActions } from './i18n';
 import { stepBotAI } from './game/bots';
 import { MobileControls } from './components/MobileControls';
 import { LobbyModal } from './components/LobbyModal';
@@ -104,6 +105,8 @@ interface HudSnapshot {
 }
 
 export default function App() {
+  // Re-render the whole shell when the language changes
+  const lang = useLang();
   // 1. Guest Session Persistence (Offline & Online)
   const [guestId, setGuestId] = useState<string>(() => {
     return localStorage.getItem('ch_guest_id') || `guest_${Math.random().toString(36).slice(2, 9)}`;
@@ -261,7 +264,7 @@ export default function App() {
           soundFX.playElimination();
           spawnPixelBurst(x, y, 28, '#EF4444', 160);
           spawnPixelBurst(x, y, 10, '#FDE68A', 90);
-          spawnFloatingWorldText(x, y, '☠️ CAUGHT!', '#EF4444');
+          spawnFloatingWorldText(x, y, t('fx.caught'), '#EF4444');
           if (!calm) {
             cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.5);
             flashRef.current = { amount: 0.35, color: '#FCA5A5' };
@@ -273,7 +276,7 @@ export default function App() {
         case 'flush': {
           soundFX.playForcedExitWarning();
           spawnPixelBurst(x, y, 18, '#F59E0B', 120);
-          spawnFloatingWorldText(x, y, '❗ FLUSHED OUT!', '#FBBF24');
+          spawnFloatingWorldText(x, y, t('fx.flushed'), '#FBBF24');
           if (!calm) cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.28);
           navigator.vibrate?.(35);
           break;
@@ -281,14 +284,14 @@ export default function App() {
         case 'inspect_empty': {
           soundFX.playInspectEmpty();
           spawnPixelBurst(x, y, 6, '#94A3B8', 55);
-          spawnFloatingWorldText(x, y, 'EMPTY', '#94A3B8');
+          spawnFloatingWorldText(x, y, t('fx.empty'), '#94A3B8');
           break;
         }
         case 'objective_stage': {
           soundFX.playObjectiveStageComplete(st.objectiveCompletedStages);
           spawnPixelBurst(x, y - 30, 40, '#34D399', 190);
           spawnPixelBurst(x, y - 30, 16, '#FDE68A', 120);
-          spawnFloatingWorldText(x, y - 40, `⚡ TIER ${st.objectiveCompletedStages} BUILT!`, '#34D399');
+          spawnFloatingWorldText(x, y - 40, t('fx.tier', { n: st.objectiveCompletedStages }), '#34D399');
           if (!calm) {
             cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.22);
             flashRef.current = { amount: 0.22, color: '#A7F3D0' };
@@ -297,11 +300,11 @@ export default function App() {
           break;
         }
         case 'power': {
-          const isMine = evt.message.includes('mine');
+          const isMine = evt.key ? evt.key === 'mineHit' : evt.message.includes('mine');
           soundFX.playElimination();
           spawnPixelBurst(x, y, isMine ? 30 : 20, isMine ? '#F97316' : '#67E8F9', isMine ? 170 : 120);
           if (isMine) spawnPixelBurst(x, y, 12, '#FDE68A', 90);
-          spawnFloatingWorldText(x, y - 10, isMine ? '💥 BOOM!' : '🛡️ BLOCKED!', isMine ? '#F97316' : '#67E8F9');
+          spawnFloatingWorldText(x, y - 10, isMine ? t('fx.boom') : t('fx.blocked'), isMine ? '#F97316' : '#67E8F9');
           if (!calm) cameraShakeRef.current = Math.max(cameraShakeRef.current, isMine ? 0.4 : 0.25);
           navigator.vibrate?.(isMine ? [50, 30, 50] : 40);
           break;
@@ -309,7 +312,7 @@ export default function App() {
         case 'hide': {
           soundFX.playForcedExitWarning();
           spawnPixelBurst(x, y, 14, '#F59E0B', 95);
-          spawnFloatingWorldText(x, y, '⚠️ TIME OUT!', '#F59E0B');
+          spawnFloatingWorldText(x, y, t('fx.timeout'), '#F59E0B');
           break;
         }
         case 'info': {
@@ -320,7 +323,7 @@ export default function App() {
               spawnFloatingWorldText(
                 m.seekerSpawns[0]?.x ?? m.width / 2,
                 m.seekerSpawns[0]?.y ?? m.height / 2,
-                '🚨 SEEKERS UNLEASHED!',
+                t('fx.unleashed'),
                 '#EF4444'
               );
             }
@@ -623,7 +626,7 @@ export default function App() {
     }
     setEndOfRunSnapshot({
       winner,
-      winReason: st.winReason || 'Match concluded.',
+      winReason: winReasonText(st) || st.winReason || '',
       localRole: localP?.role || 'hider',
       localAlive: localP?.alive ?? false,
       elapsedSeconds: st.elapsedMatchSeconds,
@@ -785,7 +788,7 @@ export default function App() {
         const p = st.players[myId];
         if (p) {
           spawnPixelBurst(p.x, p.y, 10, '#10B981', 75);
-          spawnFloatingWorldText(p.x, p.y, '🚪 HIDDEN', '#34D399');
+          spawnFloatingWorldText(p.x, p.y, t('fx.hidden'), '#34D399');
         }
       }
     } else if (chosen.action === 'exit_hide') {
@@ -796,7 +799,7 @@ export default function App() {
         const p = st.players[myId];
         if (p) {
           spawnPixelBurst(p.x, p.y, 8, '#38BDF8', 65);
-          spawnFloatingWorldText(p.x, p.y, '💨 OUT', '#94A3B8');
+          spawnFloatingWorldText(p.x, p.y, t('fx.out'), '#94A3B8');
         }
       }
     } else if (chosen.action === 'eliminate') {
@@ -861,7 +864,7 @@ export default function App() {
     soundFX.playHide(true);
     navigator.vibrate?.(kind === 'mines' ? [20, 30, 20] : 25);
     spawnPixelBurst(p.x, p.y, kind === 'smoke' ? 26 : 16, info.color, kind === 'smoke' ? 140 : 100);
-    spawnFloatingWorldText(p.x, p.y - 10, `${info.icon} ${info.power.toUpperCase()}!`, info.color);
+    spawnFloatingWorldText(p.x, p.y - 10, t('fx.used', { icon: info.icon, power: powerName(kind) }), info.color);
     if (kind === 'smoke' && !reducedMotionRef.current) cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.15);
   }, []);
 
@@ -1127,7 +1130,7 @@ export default function App() {
           const info = POWER_INFO[heldNow];
           soundFX.playUiTap();
           spawnPixelBurst(meNow.x, meNow.y, 14, info.color, 90);
-          spawnFloatingWorldText(meNow.x, meNow.y - 16, `+${info.icon} ${info.snack}! [Q]`, info.color);
+          spawnFloatingWorldText(meNow.x, meNow.y - 16, t('fx.ate', { icon: info.icon, snack: powerSnack(heldNow) }), info.color);
           navigator.vibrate?.(15);
         }
         prevHeldPowerRef.current = heldNow;
@@ -1161,7 +1164,7 @@ export default function App() {
             seekerCount: Math.max(1, seekers.length),
             roomCode: st.roomCode,
             isOnline: isOnlineMatchRef.current,
-            latestEvent: st.events[0]?.message || 'Explore the city and stay alert.',
+            latestEvent: st.events[0] ? eventText(st.events[0]) : t('hud.explore'),
             playerX: Math.round(localP?.x ?? map.width / 2),
             playerY: Math.round(localP?.y ?? map.height / 2),
             sectorLabel: getCitySectorLabel(
@@ -1170,7 +1173,7 @@ export default function App() {
               map.width,
               map.height
             ),
-            contextualActions: actions,
+            contextualActions: localizeActions(actions, st, myId),
             proximityDanger: currentTension,
             pingMs: pingMsRef.current,
             spectatingPlayerName: specTarget ? specTarget.name : null,
@@ -1467,7 +1470,7 @@ export default function App() {
                     : 'bg-slate-900 border-slate-700 text-slate-400'
                 }`}
               >
-                {wsConnected ? 'ONLINE' : 'LOCAL'}
+                {wsConnected ? t('title.online') : t('title.local')}
               </span>
             </div>
 
@@ -1492,7 +1495,7 @@ export default function App() {
                     : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                {bgmEnabled ? 'BGM: ON' : 'BGM: OFF'}
+                {bgmEnabled ? t('title.bgmOn') : t('title.bgmOff')}
               </button>
               <button
                 type="button"
@@ -1502,7 +1505,18 @@ export default function App() {
                 }}
                 className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700 font-display font-bold text-xs transition-colors cursor-pointer"
               >
-                Rules
+                {t('title.rules')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFX.playUiTap();
+                  setLang(lang === 'my' ? 'en' : 'my');
+                }}
+                aria-label={t('lang.label')}
+                className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-violet-950/80 hover:bg-violet-900 text-violet-100 border border-violet-400/60 font-bold text-xs transition-colors cursor-pointer whitespace-nowrap"
+              >
+                🌐 {t('lang.switchTo')}
               </button>
             </div>
           </div>
@@ -1511,7 +1525,7 @@ export default function App() {
           {isPortrait && (
             <div className="my-1 py-1 px-3 rounded-lg bg-amber-500/15 border border-amber-500/40 text-[11px] font-mono text-amber-300 text-center flex items-center justify-center gap-1.5">
               <span>🔄</span>
-              <span>Rotate device to landscape for full view</span>
+              <span>{t('title.rotate')}</span>
             </div>
           )}
 
@@ -1551,14 +1565,14 @@ export default function App() {
                   fontSize="14"
                   letterSpacing="2.2"
                 >
-                  4 MAPS · 76 HIDING SPOTS · 2D PIXEL ART
+                  {t('title.tagline')}
                 </text>
               </svg>
             </div>
 
             {/* Description (Visible on tablets & desktops, compact to save mobile vertical height) */}
             <p className="hidden md:block mt-1.5 text-xs text-slate-300 max-w-xl leading-relaxed">
-              Explore cutaway furnished apartments, harbor railway docks, modern executive suites, and mystic forest ruins. Hide up to 15s per object or complete 3 Beacon stages to escape!
+              {t('title.desc')}
             </p>
 
             {/* PRIMARY PLAY CTAs (Immediately below the title — Always visible on phones without scrolling!) */}
@@ -1578,7 +1592,7 @@ export default function App() {
                 className="flex-1 min-w-[140px] sm:flex-none min-h-[44px] sm:min-h-[50px] px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-display font-extrabold text-sm sm:text-base tracking-wide shadow-[0_4px_0_#065F46] sm:shadow-[0_6px_0_#065F46] transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <span>▶</span>
-                <span>Play as Guest</span>
+                <span>{t('title.play')}</span>
               </button>
 
               <button
@@ -1589,7 +1603,7 @@ export default function App() {
                 }}
                 className="min-h-[44px] sm:min-h-[50px] px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900/95 hover:bg-slate-800 active:scale-95 text-red-300 border-2 border-red-500/50 font-display font-bold text-xs sm:text-sm tracking-wide transition-colors cursor-pointer"
               >
-                Seeker (1.2×)
+                {t('title.seeker')}
               </button>
 
               <button
@@ -1600,15 +1614,15 @@ export default function App() {
                 }}
                 className="min-h-[44px] sm:min-h-[50px] px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-display font-extrabold text-xs sm:text-sm tracking-wide shadow-[0_4px_0_#92400E] sm:shadow-[0_6px_0_#92400E] transition-all cursor-pointer"
               >
-                Multiplayer Room
+                {t('title.multiplayer')}
               </button>
             </div>
 
             {/* Compact Horizontal Map Arena Selector Strip */}
             <div className="mt-2.5 sm:mt-3">
               <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-amber-300/90 mb-1">
-                <span>SELECT MAP ({MAPS[selectedTitleMap].hidingSpots.length} SPOTS)</span>
-                <span className="text-slate-400 text-[9px] hidden sm:inline">SWIPE ◄ ►</span>
+                <span>{t('title.selectMap', { n: MAPS[selectedTitleMap].hidingSpots.length })}</span>
+                <span className="text-slate-400 text-[9px] hidden sm:inline">{t('title.swipe')}</span>
               </div>
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 touch-pan-x">
                 {(
@@ -1646,8 +1660,8 @@ export default function App() {
             {/* Compact Horizontal Character Sprite Selector Strip */}
             <div className="mt-2 sm:mt-2.5">
               <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-emerald-300/90 mb-1">
-                <span>SELECT CHARACTER ({CHARACTER_SKINS.find((s) => s.id === selectedSkin)?.name})</span>
-                <span className="text-slate-400 text-[9px] hidden sm:inline">SWIPE ◄ ►</span>
+                <span>{t('title.selectChar', { name: CHARACTER_SKINS.find((s) => s.id === selectedSkin)?.name ?? '' })}</span>
+                <span className="text-slate-400 text-[9px] hidden sm:inline">{t('title.swipe')}</span>
               </div>
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 touch-pan-x">
                 {CHARACTER_SKINS.map((sk) => {
@@ -1677,11 +1691,11 @@ export default function App() {
           {/* Bottom Row / Safe Margins */}
           <div className="shrink-0 pt-1">
             <div className="hidden sm:block text-xs font-mono text-slate-400 tracking-wide">
-              WASD / Arrows Move · E / Space Hide or Inspect · Hold F Beacon Objective · Esc Pause
+              {t('title.keys')}
             </div>
             <div className="sm:hidden text-[10px] font-mono text-slate-400 flex items-center justify-between">
-              <span>📱 Virtual Joystick + Action buttons active</span>
-              <span>100% Base Speed (Seeker 1.2×)</span>
+              <span>{t('title.mobileHint')}</span>
+              <span>{t('title.mobileSpeed')}</span>
             </div>
           </div>
         </div>
@@ -1708,7 +1722,7 @@ export default function App() {
               <div>
                 <div className="text-[8px] sm:text-[10px] short:text-[8px]! font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1 sm:gap-1.5">
                   <span className="hidden xs:inline">ROLE · </span>
-                  <span>{hud.isOnline ? `RM ${hud.roomCode}` : 'GUEST'}</span>
+                  <span>{hud.isOnline ? t('hud.room', { code: hud.roomCode }) : t('hud.guest')}</span>
                   <span className="px-1 py-0.2 rounded bg-slate-900 border border-slate-700 text-[8px] sm:text-[9px] font-mono text-slate-300">
                     {hud.isOnline
                       ? hud.pingMs !== null
@@ -1723,13 +1737,13 @@ export default function App() {
                     hud.role === 'seeker' ? 'text-red-400' : 'text-emerald-400'
                   }`}
                 >
-                  {hud.role === 'seeker' ? 'SEEKER 1.2×' : 'HIDER'}
+                  {hud.role === 'seeker' ? t('hud.seeker') : t('hud.hider')}
                 </div>
               </div>
 
               <div className="pl-1.5 sm:pl-3 short:pl-1.5! border-l border-slate-800">
                 <div className="text-[8px] sm:text-[10px] font-mono uppercase text-slate-400 hidden xs:block short:hidden!">
-                  ALIVE
+                  {t('hud.alive')}
                 </div>
                 <div className="flex items-center gap-1 sm:gap-1.5 sm:mt-1">
                   <div className="hidden sm:flex short:hidden! items-center gap-1">
@@ -1772,7 +1786,7 @@ export default function App() {
               {hud.lifecycle === 'HIDER_HEAD_START' ? (
                 <div className="flex items-center justify-center gap-1.5 sm:gap-2">
                   <div className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-amber-400">
-                    HEAD START
+                    {t('hud.headStart')}
                   </div>
                   <div
                     data-testid="hud-countdown"
@@ -1784,14 +1798,14 @@ export default function App() {
               ) : (
                 <div>
                   <div className="flex items-center justify-between text-[9px] sm:text-[10px] short:text-[9px]! font-mono uppercase text-slate-300 mb-0.5 sm:mb-1 short:mb-0.5! gap-1.5">
-                    <span>BEACON {hud.stagesCompleted}/{hud.totalStages}</span>
+                    <span>{t('hud.beacon', { n: hud.stagesCompleted, total: hud.totalStages })}</span>
                     <span className="text-amber-300 font-bold tabular-nums">
                       ⏱️ {formatMatchTime(hud.matchTimerRemaining)}
                     </span>
                     <span className="text-slate-400 tabular-nums hidden xs:inline short:hidden!">
                       {hud.stageProgress > 0
-                        ? `${Math.ceil(hud.stageDuration - hud.stageProgress)}s`
-                        : `${hud.stageDuration}s/stg · 2 beacons`}
+                        ? t('hud.secsLeft', { secs: Math.ceil(hud.stageDuration - hud.stageProgress) })
+                        : t('hud.perStage', { secs: hud.stageDuration })}
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
@@ -1914,7 +1928,7 @@ export default function App() {
                     if (isMobileViewport) setMinimapVisible(false);
                   }}
                   className="bg-[#090D16]/65 backdrop-blur-[2px] border border-slate-600/60 rounded-lg sm:rounded-xl short:rounded-lg! p-0.5 sm:p-1.5 short:p-0.5! shadow-lg cursor-pointer"
-                  title="Click to collapse minimap on mobile"
+                  title={t('hud.minimapCollapse')}
                 >
                   <div className="flex items-center justify-between gap-1.5 px-0.5 mb-0.5 text-[7px] sm:text-[9px] short:text-[7px]! font-mono tracking-wider text-slate-200">
                     <span className="font-bold text-amber-300 truncate max-w-[60px] sm:max-w-none">{hud.sectorLabel}</span>
@@ -1937,15 +1951,15 @@ export default function App() {
                           hud.role === 'seeker' ? 'bg-red-500' : 'bg-emerald-400'
                         }`}
                       />
-                      YOU
+                      {t('hud.you')}
                     </span>
                     <span className="flex items-center gap-0.5">
                       <span className="inline-block w-1.5 h-1.5 rounded-xs bg-amber-400" />
-                      BEACON
+                      {t('hud.beaconLegend')}
                     </span>
                     <span className="flex items-center gap-0.5">
                       <span className="inline-block w-1.5 h-1.5 rounded-xs bg-sky-400" />
-                      HIDE
+                      {t('hud.hideLegend')}
                     </span>
                   </div>
                 </div>
@@ -1968,35 +1982,39 @@ export default function App() {
                     : 'bg-sky-700/90 text-white border-sky-400'
                 }`}
               >
-                ⚡ [SHIFT] {hud.sprinting ? 'SPRINTING!' : hud.sprintCooldown > 0 ? `Sprint ${Math.ceil(hud.sprintCooldown)}s` : 'Sprint ready'}
+                {hud.sprinting
+                  ? t('hud.sprinting')
+                  : hud.sprintCooldown > 0
+                  ? t('hud.sprintCd', { secs: Math.ceil(hud.sprintCooldown) })
+                  : t('hud.sprintReady')}
               </span>
               {hud.heldPower && (
                 <span
                   className="px-2.5 py-1 rounded-lg border shadow bg-violet-950/90 text-violet-100 border-violet-400/70"
-                  title={POWER_INFO[hud.heldPower].description}
+                  title={powerDesc(hud.heldPower)}
                 >
-                  [Q] {POWER_INFO[hud.heldPower].icon} {POWER_INFO[hud.heldPower].power}
+                  [Q] {POWER_INFO[hud.heldPower].icon} {powerName(hud.heldPower)}
                   {hud.heldCharges > 1 ? ` ×${hud.heldCharges}` : ''}
                 </span>
               )}
               {hud.cloakRemaining > 0 && (
                 <span className="px-2.5 py-1 rounded-lg border shadow bg-violet-900/90 text-violet-100 border-violet-300/70">
-                  👻 Invisible {Math.ceil(hud.cloakRemaining)}s
+                  {t('hud.invisible', { secs: Math.ceil(hud.cloakRemaining) })}
                 </span>
               )}
               {hud.shieldRemaining > 0 && (
                 <span className="px-2.5 py-1 rounded-lg border shadow bg-cyan-950/90 text-cyan-100 border-cyan-300/70">
-                  🛡️ Shield {Math.ceil(hud.shieldRemaining)}s
+                  {t('hud.shield', { secs: Math.ceil(hud.shieldRemaining) })}
                 </span>
               )}
               {hud.speedBoostRemaining > 0 && (
                 <span className="px-2.5 py-1 rounded-lg border shadow bg-orange-950/90 text-orange-100 border-orange-300/70">
-                  🍩 Speed {Math.ceil(hud.speedBoostRemaining)}s
+                  {t('hud.speed', { secs: Math.ceil(hud.speedBoostRemaining) })}
                 </span>
               )}
               {hud.rehideCooldown > 0 && (
                 <span className="px-2.5 py-1 rounded-lg border bg-amber-950/90 text-amber-200 border-amber-600/60 shadow">
-                  😮‍💨 Catch your breath {Math.ceil(hud.rehideCooldown)}s
+                  {t('hud.breath', { secs: Math.ceil(hud.rehideCooldown) })}
                 </span>
               )}
             </div>
@@ -2017,7 +2035,7 @@ export default function App() {
                   className="flex items-center gap-2.5 text-left cursor-pointer"
                 >
                   <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-bold text-xs">
-                    {act.action === 'objective' ? 'HOLD [F]' : '[E / SPACE]'}
+                    {act.action === 'objective' ? t('hud.keyHold') : t('hud.keyAction')}
                   </span>
                   <div>
                     <div className="text-xs sm:text-sm font-display font-bold text-white">
@@ -2034,11 +2052,11 @@ export default function App() {
           {!hud.alive && (
             <div className="pointer-events-auto mx-auto mb-2 flex items-center gap-2.5 sm:gap-4 bg-red-950/90 border-2 border-red-500/80 rounded-2xl px-4 py-2 sm:px-6 sm:py-2.5 shadow-2xl backdrop-blur-md">
               <span className="text-[11px] sm:text-xs font-mono font-bold text-red-300 animate-pulse">
-                ☠️ ELIMINATED
+                {t('hud.eliminated')}
               </span>
               <span className="text-slate-600">|</span>
               <span className="text-xs sm:text-sm font-display font-bold text-white">
-                SPECTATING: {hud.spectatingPlayerName || 'Living Teammate'}
+                {t('hud.spectating', { name: hud.spectatingPlayerName || t('hud.teammate') })}
               </span>
               <div className="flex items-center gap-1.5 ml-1">
                 <button
@@ -2088,7 +2106,7 @@ export default function App() {
                 }`}
               >
                 <span>{isElim ? '🔴' : isObj ? '⚡' : isHide ? '🚪' : isVic ? '🏆' : 'ℹ️'}</span>
-                <span className="truncate">{evt.message}</span>
+                <span className="truncate">{eventText(evt)}</span>
               </div>
             );
           })}

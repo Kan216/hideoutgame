@@ -7,6 +7,7 @@ import type {
 } from './maps.ts';
 import type { MatchState, PlayerState } from './rules.ts';
 import { drawBeaconConstruction, drawRelayBase } from './worldFx.ts';
+import { t as tr } from '../i18n';
 
 /**
  * Zero-GC Pre-Allocated Particle Ring Buffer for Pixel-Art Juice
@@ -375,8 +376,8 @@ export function drawPixelMap(
   ctx.textAlign = 'center';
   ctx.fillText(
     state.lifecycle === 'HIDER_HEAD_START'
-      ? `SEEKER LOCKED (${Math.ceil(state.countdownRemaining)}S)`
-      : 'SEEKER DEPLOY ZONE',
+      ? tr('fx.seekerLocked', { secs: Math.ceil(state.countdownRemaining) })
+      : tr('fx.seekerZone'),
     sz.x + sz.width / 2,
     sz.y + 18
   );
@@ -1178,7 +1179,7 @@ export function drawPlayerSprite(
       ctx.font = 'bold 10px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.fillText(
-        isLocal ? `[HIDDEN · ${remSec}s]` : `[${player.name} · ${remSec}s]`,
+        isLocal ? tr('fx.hiddenTimer', { secs: remSec }) : `[${player.name} · ${remSec}s]`,
         px,
         py - 38
       );

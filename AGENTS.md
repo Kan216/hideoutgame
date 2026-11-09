@@ -37,6 +37,11 @@
 - Phones in landscape match `sm:` width breakpoints but are short: every HUD/mobile-control size set with `sm:` must also get a compact `short:*!` override (variant defined in `src/index.css`, `max-height: 520px`).
 - Show **only** actions currently valid for the player's role, distance, and state (`Hide`, `Exit Hiding`, `Hold Beacon`, `Inspect`, `Eliminate`).
 
+## 4b. Localization (English / Burmese)
+- All player-facing text goes through `t('key')` from `src/i18n.tsx`; add every new string to BOTH the `en` and `my` dictionaries (TypeScript enforces that `my` has every `en` key).
+- Server-side text (events, win reasons) must also pass a translation `key` + `params` (see `pushMatchEvent`'s `i18n` argument); keep the English `message` as a fallback.
+- Proper names (maps, characters, hiding spots, players) are not translated.
+
 ## 5. Testing & How to Resume Work
 1. Read `/AGENTS.md` and `/docs/PROJECT_STATE.md`.
 2. Run unit tests first: `node --test src/game/rules.test.ts` (29 tests incl. `src/server/statsTracker.test.ts`; run all with `npm test`). For balance changes also run `npm run simulate`.
