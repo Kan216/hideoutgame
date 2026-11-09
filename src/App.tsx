@@ -25,7 +25,10 @@ import {
   MatchEventLog,
   PlayerState,
   attemptSprint,
+  attemptUsePower,
   filterStateForViewer,
+  POWER_INFO,
+  PowerKind,
 } from './game/rules';
 import {
   computeVisibilityPolygon,
@@ -34,6 +37,9 @@ import {
   drawPlayerStatusFx,
   drawScreenFlash,
   drawTransmitLinks,
+  drawPowerUps,
+  drawMines,
+  drawSmokes,
 } from './game/worldFx';
 import {
   drawPixelMap,
@@ -90,6 +96,11 @@ interface HudSnapshot {
   sprintCooldown: number;
   sprinting: boolean;
   rehideCooldown: number;
+  heldPower: PowerKind | null;
+  heldCharges: number;
+  cloakRemaining: number;
+  shieldRemaining: number;
+  speedBoostRemaining: number;
 }
 
 export default function App() {
@@ -183,6 +194,11 @@ export default function App() {
     sprintCooldown: 0,
     sprinting: false,
     rehideCooldown: 0,
+    heldPower: null,
+    heldCharges: 0,
+    cloakRemaining: 0,
+    shieldRemaining: 0,
+    speedBoostRemaining: 0,
   });
 
   // Refs for Decoupled 60 FPS Canvas Simulation
@@ -212,6 +228,11 @@ export default function App() {
   );
   const cameraRef = useRef<{ x: number; y: number } | null>(null);
   const fogPolyRef = useRef<number[]>([]);
+  const prevHeldPowerRef = useRef<PowerKind | null>(null);
+  // Dev-only test hook (stripped from production builds): lets Playwright inspect/modify the live match
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    (window as unknown as { __CH_DEBUG__?: unknown }).__CH_DEBUG__ = { matchStateRef, guestIdRef };
+  }
   /** Client-side first-seen time per event id (server clocks may differ), used to auto-hide toasts. */
   const eventSeenAtRef = useRef<Map<string, number>>(new Map());
 
@@ -273,6 +294,16 @@ export default function App() {
             flashRef.current = { amount: 0.22, color: '#A7F3D0' };
           }
           navigator.vibrate?.([40, 40, 100]);
+          break;
+        }
+        case 'power': {
+          const isMine = evt.message.includes('mine');
+          soundFX.playElimination();
+          spawnPixelBurst(x, y, isMine ? 30 : 20, isMine ? '#F97316' : '#67E8F9', isMine ? 170 : 120);
+          if (isMine) spawnPixelBurst(x, y, 12, '#FDE68A', 90);
+          spawnFloatingWorldText(x, y - 10, isMine ? '💥 BOOM!' : '🛡️ BLOCKED!', isMine ? '#F97316' : '#67E8F9');
+          if (!calm) cameraShakeRef.current = Math.max(cameraShakeRef.current, isMine ? 0.4 : 0.25);
+          navigator.vibrate?.(isMine ? [50, 30, 50] : 40);
           break;
         }
         case 'hide': {
@@ -786,6 +817,27 @@ export default function App() {
     }
   }, []);
 
+  const triggerUsePower = useCallback(() => {
+    const st = matchStateRef.current;
+    const myId = guestIdRef.current;
+    const p = st.players[myId];
+    if (!p || !p.heldPower || p.hiddenInSpotId) return;
+    const kind = p.heldPower;
+    const info = POWER_INFO[kind];
+    if (isOnlineMatchRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'action', action: 'use_power' }));
+    } else {
+      const res = attemptUsePower(st, myId, Date.now());
+      if (!res.ok) return;
+    }
+    // Activation feedback
+    soundFX.playHide(true);
+    navigator.vibrate?.(kind === 'mines' ? [20, 30, 20] : 25);
+    spawnPixelBurst(p.x, p.y, kind === 'smoke' ? 26 : 16, info.color, kind === 'smoke' ? 140 : 100);
+    spawnFloatingWorldText(p.x, p.y - 10, `${info.icon} ${info.power.toUpperCase()}!`, info.color);
+    if (kind === 'smoke' && !reducedMotionRef.current) cameraShakeRef.current = Math.max(cameraShakeRef.current, 0.15);
+  }, []);
+
   // Global Keyboard Listeners
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -864,6 +916,11 @@ export default function App() {
         triggerSprint();
       }
 
+      if (!e.repeat && key === 'q') {
+        e.preventDefault();
+        triggerUsePower();
+      }
+
       keysPressedRef.current.add(key);
     };
 
@@ -897,6 +954,7 @@ export default function App() {
     sendEmote,
     cycleSpectatorTarget,
     triggerSprint,
+    triggerUsePower,
   ]);
 
   // Mount Isolated 60 FPS Canvas2D Simulation & Renderer Once
@@ -1035,6 +1093,18 @@ export default function App() {
           }
         }
 
+        // Snack eaten → celebratory feedback
+        const meNow = st.players[myId];
+        const heldNow = meNow?.heldPower ?? null;
+        if (heldNow && heldNow !== prevHeldPowerRef.current && meNow) {
+          const info = POWER_INFO[heldNow];
+          soundFX.playUiTap();
+          spawnPixelBurst(meNow.x, meNow.y, 14, info.color, 90);
+          spawnFloatingWorldText(meNow.x, meNow.y - 16, `+${info.icon} ${info.snack}! [Q]`, info.color);
+          navigator.vibrate?.(15);
+        }
+        prevHeldPowerRef.current = heldNow;
+
         // Sync HUD snapshot at ~10Hz
         if (now - lastHudSync > 95) {
           lastHudSync = now;
@@ -1096,6 +1166,11 @@ export default function App() {
               }
               return out;
             })(),
+            heldPower: localP?.heldPower ?? null,
+            heldCharges: localP?.heldCharges ?? 0,
+            cloakRemaining: localP?.cloakRemaining ?? 0,
+            shieldRemaining: localP?.shieldRemaining ?? 0,
+            speedBoostRemaining: localP?.speedBoostRemaining ?? 0,
             sprintCooldown: localP?.sprintCooldownRemaining ?? 0,
             sprinting: (localP?.sprintRemaining ?? 0) > 0,
             rehideCooldown: localP?.rehideCooldownRemaining ?? 0,
@@ -1212,6 +1287,10 @@ export default function App() {
       drawPixelMap(ctx, map, viewState, myId, timeSec, { wobbleSpotIds });
       const objectives = getMapObjectives(map);
       drawTransmitLinks(ctx, viewState, objectives, posOf, timeSec);
+      if (inMatch) {
+        drawMines(ctx, viewState.mines, timeSec);
+        drawPowerUps(ctx, viewState.powerUps, timeSec);
+      }
 
       const localP = viewState.players[myId];
       const viewerRole = localP?.role || 'hider';
@@ -1221,7 +1300,13 @@ export default function App() {
       for (const p of sortedPlayers) {
         const pos = posOf(p);
         const drawP = pos === p ? p : { ...p, x: pos.x, y: pos.y };
+        const cloaked = (p.cloakRemaining ?? 0) > 0;
+        if (cloaked) {
+          ctx.save();
+          ctx.globalAlpha = 0.32 + 0.1 * Math.sin(timeSec * 9);
+        }
         drawPlayerSprite(ctx, drawP, p.id === myId, viewerRole, distWalkedMapRef.current[p.id] || 0);
+        if (cloaked) ctx.restore();
         drawPlayerStatusFx(ctx, p, pos.x, pos.y, timeSec);
 
         // Footstep dust puffs while moving
@@ -1269,7 +1354,10 @@ export default function App() {
       // 2c. World-space overlays that must read through the darkness
       ctx.save();
       ctx.translate(offsetX, offsetY);
-      if (inMatch) drawNoisePings(ctx, viewState.noisePings, timeSec);
+      if (inMatch) {
+        drawSmokes(ctx, viewState.smokes, timeSec);
+        drawNoisePings(ctx, viewState.noisePings, timeSec);
+      }
       stepAndDrawFloatingTexts(ctx, dt);
       ctx.restore();
 
@@ -1852,6 +1940,30 @@ export default function App() {
               >
                 ⚡ [SHIFT] {hud.sprinting ? 'SPRINTING!' : hud.sprintCooldown > 0 ? `Sprint ${Math.ceil(hud.sprintCooldown)}s` : 'Sprint ready'}
               </span>
+              {hud.heldPower && (
+                <span
+                  className="px-2.5 py-1 rounded-lg border shadow bg-violet-950/90 text-violet-100 border-violet-400/70"
+                  title={POWER_INFO[hud.heldPower].description}
+                >
+                  [Q] {POWER_INFO[hud.heldPower].icon} {POWER_INFO[hud.heldPower].power}
+                  {hud.heldCharges > 1 ? ` ×${hud.heldCharges}` : ''}
+                </span>
+              )}
+              {hud.cloakRemaining > 0 && (
+                <span className="px-2.5 py-1 rounded-lg border shadow bg-violet-900/90 text-violet-100 border-violet-300/70">
+                  👻 Invisible {Math.ceil(hud.cloakRemaining)}s
+                </span>
+              )}
+              {hud.shieldRemaining > 0 && (
+                <span className="px-2.5 py-1 rounded-lg border shadow bg-cyan-950/90 text-cyan-100 border-cyan-300/70">
+                  🛡️ Shield {Math.ceil(hud.shieldRemaining)}s
+                </span>
+              )}
+              {hud.speedBoostRemaining > 0 && (
+                <span className="px-2.5 py-1 rounded-lg border shadow bg-orange-950/90 text-orange-100 border-orange-300/70">
+                  🍩 Speed {Math.ceil(hud.speedBoostRemaining)}s
+                </span>
+              )}
               {hud.rehideCooldown > 0 && (
                 <span className="px-2.5 py-1 rounded-lg border bg-amber-950/90 text-amber-200 border-amber-600/60 shadow">
                   😮‍💨 Catch your breath {Math.ceil(hud.rehideCooldown)}s
@@ -1927,7 +2039,7 @@ export default function App() {
           {hud.activeEvents.slice(0, isShortViewport ? 2 : 3).map((evt) => {
             const isElim = evt.type === 'elimination';
             const isObj = evt.type === 'objective_stage';
-            const isHide = evt.type === 'hide' || evt.type === 'flush';
+            const isHide = evt.type === 'hide' || evt.type === 'flush' || evt.type === 'power';
             const isVic = evt.type === 'victory';
             return (
               <div
@@ -1966,17 +2078,17 @@ export default function App() {
 
       {/* Quick Tactical Callouts Dock (Desktop Keyboard 1-6) */}
       {!showMobileControls && shellState === 'playing' && (
-        <div className="fixed bottom-3 right-4 sm:right-6 z-25 pointer-events-auto flex items-center gap-1.5 bg-[#090D16]/90 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-xl backdrop-blur-md">
-          <span className="text-[10px] font-mono text-slate-400 mr-1 hidden sm:inline">CALLOUTS:</span>
+        <div className="fixed bottom-3 right-4 sm:right-6 z-25 pointer-events-auto flex items-center gap-1 bg-[#090D16]/85 border border-slate-700/80 rounded-xl px-1.5 py-1 shadow-xl backdrop-blur-md">
           {QUICK_EMOTES.map((em, idx) => (
             <button
               key={em}
               type="button"
               tabIndex={-1}
               onClick={() => sendEmote(em)}
-              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono text-slate-200 border border-slate-700/60 cursor-pointer"
+              title={`${em} [${idx + 1}]`}
+              className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-mono text-slate-200 border border-slate-700/60 cursor-pointer"
             >
-              <span className="text-amber-400 font-bold mr-1">[{idx + 1}]</span>
+              <span className="text-amber-400 font-bold text-[9px] mr-0.5">{idx + 1}</span>
               {em.split(' ')[0]}
             </button>
           ))}
@@ -2000,6 +2112,18 @@ export default function App() {
         sprintCooldown={hud.sprintCooldown}
         sprinting={hud.sprinting}
         onSprint={triggerSprint}
+        heldPower={hud.role === 'hider' && hud.alive ? hud.heldPower : null}
+        heldCharges={hud.heldCharges}
+        activePowerLabel={
+          hud.cloakRemaining > 0
+            ? `👻 ${Math.ceil(hud.cloakRemaining)}s`
+            : hud.shieldRemaining > 0
+            ? `🛡️ ${Math.ceil(hud.shieldRemaining)}s`
+            : hud.speedBoostRemaining > 0
+            ? `🍩 ${Math.ceil(hud.speedBoostRemaining)}s`
+            : null
+        }
+        onUsePower={triggerUsePower}
       />
 
       {/* Online Multiplayer & Match Setup Lobby Modal */}

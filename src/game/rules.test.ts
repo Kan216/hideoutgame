@@ -22,6 +22,9 @@ import {
   filterStateForViewer,
   hasLineOfSight,
   getAvailableContextualActions,
+  attemptUsePower,
+  spawnPowerUp,
+  stepPowerUps,
 } from './rules.ts';
 import { MAPS, getMapObjectives } from './maps.ts';
 import { findPath, isCorridorClear } from './navigation.ts';
@@ -555,4 +558,126 @@ test('Bots: a full bot-only match always terminates with a winner', () => {
   }
   assert.equal(state.lifecycle, 'MATCH_COMPLETED');
   assert.ok(state.winner === 'hiders' || state.winner === 'seekers');
+});
+
+// ───────────────────────── v2.1 edible hider powers ─────────────────────────
+
+function hiderWithPower(kind: 'cloak' | 'shield' | 'mines' | 'smoke' | 'speed') {
+  const state = activeMatch();
+  const map = MAPS[state.config.mapId];
+  state.powerUps = [];
+  state.players['p2'].heldPower = kind;
+  state.players['p2'].heldCharges = kind === 'mines' ? 2 : 1;
+  // open street, seeker close by in plain sight
+  state.players['p2'].x = map.hiderSpawns[0].x;
+  state.players['p2'].y = map.hiderSpawns[0].y;
+  state.players['p1'].x = map.hiderSpawns[0].x + 40;
+  state.players['p1'].y = map.hiderSpawns[0].y;
+  return state;
+}
+
+test('Power snacks spawn on open ground, away from the seeker precinct, and hiders eat them', () => {
+  const state = activeMatch();
+  const map = MAPS[state.config.mapId];
+  state.rngSeed = 42;
+  state.powerUps = [];
+  for (let i = 0; i < 6; i++) spawnPowerUp(state, map);
+  assert.equal(state.powerUps.length, state.config.powerUpMaxOnMap, 'capped');
+  for (const pu of state.powerUps) assert.ok(isPositionWallFree(pu.x, pu.y, 20, map));
+  const pu = state.powerUps[0];
+  const hider = state.players['p2'];
+  hider.x = pu.x;
+  hider.y = pu.y;
+  stepPowerUps(state, 0.04, 1, map);
+  assert.equal(hider.heldPower, pu.kind);
+  assert.ok(!state.powerUps.some((p) => p.id === pu.id));
+  // Seekers never eat snacks
+  const seeker = state.players['p1'];
+  const other = state.powerUps[0];
+  seeker.x = other.x;
+  seeker.y = other.y;
+  stepPowerUps(state, 0.04, 2, map);
+  assert.ok(state.powerUps.some((p) => p.id === other.id));
+  assert.equal(seeker.heldPower ?? null, null);
+});
+
+test('Invisibility cloak: seekers cannot perceive a cloaked hider unless right next to them', () => {
+  const state = hiderWithPower('cloak');
+  const seeker = state.players['p1'];
+  const hider = state.players['p2'];
+  seeker.x = hider.x + 120;
+  assert.equal(canPerceive(state, seeker, hider), true, 'visible before');
+  assert.equal(attemptUsePower(state, 'p2').ok, true);
+  assert.equal(hider.heldPower, null);
+  hider.vx = 160; // even running is silent
+  assert.equal(canPerceive(state, seeker, hider), false);
+  assert.equal(filterStateForViewer(state, 'p1').players['p2'].masked, true);
+  seeker.x = hider.x + 40;
+  assert.equal(canPerceive(state, seeker, hider), true, 'bumping into them reveals');
+  for (let i = 0; i < 90; i++) stepAuthoritativeMatch(state, 0.1, 1000 + i * 100);
+  assert.equal(hider.cloakRemaining, 0, 'cloak expires (8s)');
+});
+
+test('Shield blocks one catch, pushes the hider away and stuns the seeker', () => {
+  const state = hiderWithPower('shield');
+  assert.equal(attemptUsePower(state, 'p2').ok, true);
+  const first = attemptDirectElimination(state, 'p1', 'p2', 5000);
+  assert.equal(first.ok, false);
+  assert.equal(state.players['p2'].alive, true);
+  assert.equal(state.players['p2'].shieldRemaining, 0);
+  assert.ok((state.players['p1'].stunRemaining ?? 0) > 0);
+  assert.equal(state.players['p1'].stunKind, 'shield');
+  assert.equal(state.events[0].type, 'power');
+  // shield is gone: next catch works
+  state.players['p1'].stunRemaining = 0;
+  state.players['p1'].x = state.players['p2'].x + 20;
+  state.players['p1'].y = state.players['p2'].y;
+  assert.equal(attemptDirectElimination(state, 'p1', 'p2', 6000).ok, true);
+});
+
+test('Mines: two charges, invisible to seekers, stun a seeker who steps on an armed mine', () => {
+  const state = hiderWithPower('mines');
+  const map = MAPS[state.config.mapId];
+  state.players['p1'].x = map.seekerSpawns[0].x;
+  state.players['p1'].y = map.seekerSpawns[0].y;
+  assert.equal(attemptUsePower(state, 'p2').ok, true);
+  assert.equal(state.players['p2'].heldCharges, 1, 'one mine left');
+  assert.equal(state.mines?.length, 1);
+  assert.deepEqual(filterStateForViewer(state, 'p1').mines, [], 'seekers never receive mines');
+  assert.equal(filterStateForViewer(state, 'p2').mines?.length, 1);
+  const mine = state.mines![0];
+  // not armed yet
+  state.players['p1'].x = mine.x;
+  state.players['p1'].y = mine.y;
+  stepPowerUps(state, 0.1, 1, map);
+  assert.equal(state.mines?.length, 1);
+  stepPowerUps(state, 0.6, 2, map);
+  assert.equal(state.mines?.length, 0, 'triggered');
+  assert.equal(state.players['p1'].stunKind, 'mine');
+  assert.ok((state.players['p1'].stunRemaining ?? 0) >= 2);
+  assert.ok(state.events.some((e) => e.type === 'power' && e.message.includes('mine')));
+});
+
+test('Smoke bomb blocks seeker sight (not hearing) and fades after 7s', () => {
+  const state = hiderWithPower('smoke');
+  const seeker = state.players['p1'];
+  const hider = state.players['p2'];
+  seeker.x = hider.x + 200;
+  hider.vx = 0;
+  hider.vy = 0;
+  assert.equal(canPerceive(state, seeker, hider), true);
+  assert.equal(attemptUsePower(state, 'p2').ok, true);
+  assert.equal(canPerceive(state, seeker, hider), false, 'hidden in smoke');
+  for (let i = 0; i < 75; i++) stepAuthoritativeMatch(state, 0.1, 1000 + i * 100);
+  assert.equal(state.smokes?.length, 0);
+});
+
+test('Energy donut: speed boost for 10s, cannot use powers while hidden', () => {
+  const state = hiderWithPower('speed');
+  const hider = state.players['p2'];
+  const base = getPlayerSpeed('hider', state.config, hider);
+  assert.equal(attemptUsePower(state, 'p2').ok, true);
+  assert.ok(getPlayerSpeed('hider', state.config, hider) > base);
+  assert.equal(attemptUsePower(state, 'p2').ok, false, 'slot is empty now');
+  assert.equal(attemptUsePower(state, 'p1').ok, false, 'seekers have no powers');
 });

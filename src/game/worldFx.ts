@@ -1,5 +1,6 @@
 import type { MapConfig, ObjectiveConfig, WallRect } from './maps.ts';
-import type { MatchState, NoisePing, PlayerState } from './rules.ts';
+import type { MatchState, NoisePing, PlayerState, PowerPickup, MineState, SmokeCloud } from './rules.ts';
+import { POWER_INFO } from './rules.ts';
 
 /**
  * Client-only world effects: vision polygon + fog of war, ambient lighting, noise-ping rings,
@@ -460,11 +461,13 @@ export function drawPlayerStatusFx(
       ctx.fillStyle = isSeeker ? '#CBD5E1' : '#FDE047';
       ctx.fillRect(sx - 1, sy - 1, 3, 3);
     }
-    if (isSeeker) {
+    const label =
+      p.stunKind === 'mine' ? 'BOOM! STUNNED' : p.stunKind === 'shield' ? 'BLOCKED!' : isSeeker ? 'searching…' : '';
+    if (label) {
       ctx.font = 'bold 9px "PixelOperator8", monospace';
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#E2E8F0';
-      ctx.fillText('searching…', px, py - 40);
+      ctx.fillStyle = p.stunKind === 'mine' ? '#FCA5A5' : p.stunKind === 'shield' ? '#67E8F9' : '#E2E8F0';
+      ctx.fillText(label, px, py - 40);
     }
   }
   // Revealed after a flush → pulsing red marker
@@ -478,14 +481,31 @@ export function drawPlayerStatusFx(
     ctx.textAlign = 'center';
     ctx.fillText('!', px, py - 32);
   }
-  // Sprinting → speed streaks behind the runner
-  if ((p.sprintRemaining ?? 0) > 0) {
+  // Shield → shimmering bubble
+  if ((p.shieldRemaining ?? 0) > 0) {
+    const wob = Math.sin(timeSec * 6) * 1.5;
+    const fading = (p.shieldRemaining ?? 0) < 2 && Math.floor(timeSec * 8) % 2 === 0;
+    if (!fading) {
+      ctx.beginPath();
+      ctx.arc(px, py - 4, 22 + wob, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(103, 232, 249, 0.14)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(103, 232, 249, 0.85)';
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillRect(px - 12, py - 20, 4, 2);
+    }
+  }
+  // Sprinting / speed boost → speed streaks behind the runner
+  if ((p.sprintRemaining ?? 0) > 0 || (p.speedBoostRemaining ?? 0) > 0) {
+    const streak = (p.sprintRemaining ?? 0) > 0 ? '125, 211, 252' : '253, 186, 116';
     const sp = Math.hypot(p.vx, p.vy);
     if (sp > 1) {
       const nx = -p.vx / sp;
       const ny = -p.vy / sp;
       for (let i = 1; i <= 4; i++) {
-        ctx.fillStyle = `rgba(125, 211, 252, ${0.55 - i * 0.12})`;
+        ctx.fillStyle = `rgba(${streak}, ${0.55 - i * 0.12})`;
         const jitter = ((i * 7 + Math.floor(timeSec * 30)) % 5) - 2;
         ctx.fillRect(
           px + Math.round(nx * (10 + i * 7)) + Math.round(-ny * jitter * 2),
@@ -506,5 +526,110 @@ export function drawScreenFlash(ctx: CanvasRenderingContext2D, w: number, h: num
   ctx.globalAlpha = Math.min(0.6, amount);
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+// ───────────────────────────── Power-ups ─────────────────────────────
+
+/** Edible snacks lying on the street: bobbing icon on a glowing plate. */
+export function drawPowerUps(ctx: CanvasRenderingContext2D, pickups: PowerPickup[] | undefined, timeSec: number) {
+  if (!pickups) return;
+  ctx.save();
+  for (const pu of pickups) {
+    const info = POWER_INFO[pu.kind];
+    const x = Math.round(pu.x);
+    const y = Math.round(pu.y);
+    const bob = Math.round(Math.sin(timeSec * 3 + pu.id) * 3);
+    const pulse = 0.5 + 0.5 * Math.sin(timeSec * 4 + pu.id);
+    // ground glow + shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(x - 9, y + 9, 18, 4);
+    ctx.beginPath();
+    ctx.arc(x, y, 15 + pulse * 3, 0, Math.PI * 2);
+    ctx.fillStyle = `${info.color}33`;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = info.color;
+    ctx.stroke();
+    // solid plate so the snack reads on any ground
+    ctx.beginPath();
+    ctx.arc(x, y - 2 + bob, 11, 0, Math.PI * 2);
+    ctx.fillStyle = '#0F172A';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = info.color;
+    ctx.stroke();
+    // icon
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '15px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(info.icon, x, y - 2 + bob);
+    // sparkle
+    if (Math.floor(timeSec * 3 + pu.id) % 3 === 0) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(x + 10, y - 14 + bob, 2, 2);
+      ctx.fillRect(x - 13, y - 6 + bob, 1, 1);
+    }
+  }
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+/** Hider mines (only present in the state hiders receive). */
+export function drawMines(ctx: CanvasRenderingContext2D, mines: MineState[] | undefined, timeSec: number) {
+  if (!mines) return;
+  ctx.save();
+  for (const m of mines) {
+    const x = Math.round(m.x);
+    const y = Math.round(m.y);
+    const armed = m.armDelay <= 0;
+    const blinkFast = m.ttl < 3;
+    const on = Math.floor(timeSec * (blinkFast ? 8 : 3) + m.id) % 2 === 0;
+    ctx.fillStyle = '#090D16';
+    ctx.fillRect(x - 7, y - 4, 14, 8);
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(x - 6, y - 3, 12, 6);
+    ctx.fillStyle = armed ? (on ? '#EF4444' : '#7F1D1D') : '#FBBF24';
+    ctx.fillRect(x - 2, y - 2, 4, 3);
+    // trigger radius hint for teammates
+    ctx.beginPath();
+    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.25)';
+    ctx.setLineDash([3, 4]);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+/** Billowing smoke clouds (drawn above the fog so everyone sees the cloud itself). */
+export function drawSmokes(ctx: CanvasRenderingContext2D, smokes: SmokeCloud[] | undefined, timeSec: number) {
+  if (!smokes) return;
+  ctx.save();
+  for (const s of smokes) {
+    const life = s.ttl / s.maxTtl;
+    const grow = Math.min(1, (1 - life) * 6); // puff out quickly
+    const alpha = Math.min(0.85, life * 1.4) * 0.8;
+    const r = s.radius * (0.55 + 0.45 * grow);
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + timeSec * 0.25 + s.id;
+      const d = r * (i % 2 === 0 ? 0.45 : 0.62);
+      const pr = r * (0.42 + 0.08 * Math.sin(timeSec * 1.7 + i));
+      const cx = s.x + Math.cos(a) * d;
+      const cy = s.y + Math.sin(a) * d * 0.8;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, pr);
+      g.addColorStop(0, `rgba(203, 213, 225, ${alpha})`);
+      g.addColorStop(1, 'rgba(148, 163, 184, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - pr, cy - pr, pr * 2, pr * 2);
+    }
+    const core = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 0.7);
+    core.addColorStop(0, `rgba(226, 232, 240, ${alpha})`);
+    core.addColorStop(1, 'rgba(226, 232, 240, 0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(s.x - r, s.y - r, r * 2, r * 2);
+  }
   ctx.restore();
 }

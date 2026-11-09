@@ -6,6 +6,7 @@ import {
   attemptExitHidingSpot,
   attemptInspectHidingSpot,
   attemptSprint,
+  attemptUsePower,
   canPerceive,
   getAvailableContextualActions,
   getSpotCenter,
@@ -256,6 +257,10 @@ function stepHiderBot(state: MatchState, bot: PlayerState, dt: number, nowMs: nu
 
   // Under pressure: flee to the safest reachable spot (or simply away from the seeker)
   if (active && freshThreatNear && nearestThreatPos) {
+    // Pop the eaten snack when a seeker closes in
+    if (bot.heldPower && nearestThreat < (bot.heldPower === 'mines' ? 280 : 220)) {
+      attemptUsePower(state, bot.id, nowMs);
+    }
     setObjectiveInteraction(state, bot.id, false);
     if (nearestThreat < 230 && (bot.sprintCooldownRemaining ?? 0) <= 0) {
       attemptSprint(state, bot.id);
@@ -271,6 +276,24 @@ function stepHiderBot(state: MatchState, bot: PlayerState, dt: number, nowMs: nu
     }
     moveToward(state, bot, brain.fleeTarget.x, brain.fleeTarget.y, dt, nowMs, map);
     return;
+  }
+
+  // Snack run: grab a nearby power-up when the coast is clear
+  if (!bot.heldPower && (state.powerUps?.length ?? 0) > 0 && nearestThreat > 300) {
+    let best: { x: number; y: number } | null = null;
+    let bestD = 280;
+    for (const pu of state.powerUps ?? []) {
+      const d = Math.hypot(pu.x - bot.x, pu.y - bot.y);
+      if (d < bestD) {
+        bestD = d;
+        best = pu;
+      }
+    }
+    if (best) {
+      setObjectiveInteraction(state, bot.id, false);
+      moveToward(state, bot, best.x, best.y, dt, nowMs, map);
+      return;
+    }
   }
 
   // Beacon duty

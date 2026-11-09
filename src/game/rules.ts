@@ -54,6 +54,15 @@ export interface PlayerState {
   /** Hider sprint burst: seconds of boosted speed left, and cooldown before the next burst. */
   sprintRemaining?: number;
   sprintCooldownRemaining?: number;
+  /** Why the player is stunned (for visuals): searching an object, flushed out, hit a mine, bounced off a shield. */
+  stunKind?: 'search' | 'flush' | 'mine' | 'shield' | null;
+  /** Eaten snack waiting to be activated (one slot) and remaining charges (mines come in pairs). */
+  heldPower?: PowerKind | null;
+  heldCharges?: number;
+  /** Active hider power timers (seconds). */
+  cloakRemaining?: number;
+  shieldRemaining?: number;
+  speedBoostRemaining?: number;
   /** Set by `filterStateForViewer` when the viewer is not allowed to know this player's position. */
   masked?: boolean;
 }
@@ -87,6 +96,22 @@ export interface MatchConfig {
   hiderSprintMultiplier: number;
   hiderSprintSeconds: number;
   hiderSprintCooldownSeconds: number;
+  /** Edible power-ups for hiders */
+  powerUpsEnabled: boolean;
+  powerUpMaxOnMap: number;
+  powerUpSpawnIntervalSeconds: number;
+  cloakSeconds: number;
+  cloakRevealRadius: number;
+  shieldSeconds: number;
+  shieldBlockStunSeconds: number;
+  minesPerPickup: number;
+  mineSeconds: number;
+  mineStunSeconds: number;
+  mineTriggerRadius: number;
+  smokeSeconds: number;
+  smokeRadius: number;
+  speedBoostSeconds: number;
+  speedBoostMultiplier: number;
   /** While a beacon transmits it emits a noise ping this often (seconds). */
   beaconNoiseIntervalSeconds: number;
   /** Vision radius (line-of-sight required). */
@@ -95,6 +120,53 @@ export interface MatchConfig {
   /** Radius at which a MOVING enemy is heard even without line of sight. */
   seekerHearingRadius: number;
   hiderHearingRadius: number;
+}
+
+/** Edible hider power-ups ("snacks"). */
+export type PowerKind = 'cloak' | 'shield' | 'mines' | 'smoke' | 'speed';
+
+export interface PowerInfo {
+  kind: PowerKind;
+  snack: string;
+  power: string;
+  icon: string;
+  color: string;
+  description: string;
+}
+
+export const POWER_INFO: Record<PowerKind, PowerInfo> = {
+  cloak: { kind: 'cloak', snack: 'Ghost Candy', power: 'Invisibility Cloak', icon: '👻', color: '#C4B5FD', description: 'Invisible & silent to seekers for 8s (unless they bump into you)' },
+  shield: { kind: 'shield', snack: 'Iron Apple', power: 'Shield', icon: '🛡️', color: '#67E8F9', description: 'Blocks one catch for 12s and stuns the seeker' },
+  mines: { kind: 'mines', snack: 'Pop Rocks', power: 'Mines', icon: '💣', color: '#F87171', description: 'Drop hidden mines (15s) that stun seekers for 2.5s' },
+  smoke: { kind: 'smoke', snack: 'Smoke Pie', power: 'Smoke Bomb', icon: '💨', color: '#CBD5E1', description: 'Smoke cloud for 7s that seekers cannot see through' },
+  speed: { kind: 'speed', snack: 'Energy Donut', power: 'Speed Boost', icon: '🍩', color: '#FDBA74', description: '+25% speed for 10s' },
+};
+
+export const POWER_KINDS: PowerKind[] = ['cloak', 'shield', 'mines', 'smoke', 'speed'];
+
+export interface PowerPickup {
+  id: number;
+  kind: PowerKind;
+  x: number;
+  y: number;
+}
+
+export interface MineState {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+  ttl: number;
+  armDelay: number;
+}
+
+export interface SmokeCloud {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  ttl: number;
+  maxTtl: number;
 }
 
 export type NoisePingKind = 'exit' | 'rustle' | 'flush' | 'footstep' | 'beacon';
@@ -111,7 +183,7 @@ export interface NoisePing {
 export interface MatchEventLog {
   id: string;
   timestamp: number;
-  type: 'info' | 'hide' | 'inspect_empty' | 'flush' | 'elimination' | 'objective_stage' | 'victory';
+  type: 'info' | 'hide' | 'inspect_empty' | 'flush' | 'elimination' | 'objective_stage' | 'victory' | 'power';
   message: string;
   x?: number;
   y?: number;
@@ -138,6 +210,13 @@ export interface MatchState {
   events: MatchEventLog[];
   /** Short-lived world-space sound cues that are visible through fog of war. */
   noisePings?: NoisePing[];
+  /** Edible power-ups lying on the map, hider mines (hidden from seekers) and smoke clouds. */
+  powerUps?: PowerPickup[];
+  mines?: MineState[];
+  smokes?: SmokeCloud[];
+  powerSpawnTimer?: number;
+  /** Deterministic RNG state for power-up spawns. */
+  rngSeed?: number;
 }
 
 export function formatMatchTime(totalSeconds: number): string {
@@ -170,6 +249,21 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   hiderSprintMultiplier: 1.45,
   hiderSprintSeconds: 2.2,
   hiderSprintCooldownSeconds: 8,
+  powerUpsEnabled: true,
+  powerUpMaxOnMap: 4,
+  powerUpSpawnIntervalSeconds: 9,
+  cloakSeconds: 8,
+  cloakRevealRadius: 55,
+  shieldSeconds: 12,
+  shieldBlockStunSeconds: 1.3,
+  minesPerPickup: 2,
+  mineSeconds: 15,
+  mineStunSeconds: 2.5,
+  mineTriggerRadius: 30,
+  smokeSeconds: 7,
+  smokeRadius: 130,
+  speedBoostSeconds: 10,
+  speedBoostMultiplier: 1.25,
   seekerVisionRadius: 250,
   hiderVisionRadius: 340,
   seekerHearingRadius: 110,
@@ -271,15 +365,15 @@ export function generateGuestName(seedNumber?: number): string {
 export function getPlayerSpeed(
   role: PlayerRole,
   config: MatchConfig = DEFAULT_MATCH_CONFIG,
-  player?: Pick<PlayerState, 'sprintRemaining'>
+  player?: Pick<PlayerState, 'sprintRemaining' | 'speedBoostRemaining'>
 ): number {
   if (role === 'seeker') {
     return config.hiderBaseSpeed * config.seekerSpeedMultiplier;
   }
-  if (player && (player.sprintRemaining ?? 0) > 0) {
-    return config.hiderBaseSpeed * (config.hiderSprintMultiplier ?? 1.45);
-  }
-  return config.hiderBaseSpeed;
+  let mult = 1;
+  if (player && (player.sprintRemaining ?? 0) > 0) mult = Math.max(mult, config.hiderSprintMultiplier ?? 1.45);
+  if (player && (player.speedBoostRemaining ?? 0) > 0) mult = Math.max(mult, config.speedBoostMultiplier ?? 1.25);
+  return config.hiderBaseSpeed * mult;
 }
 
 /** Hider sprint burst. Returns ok=false while on cooldown, hidden, stunned or not a living hider. */
@@ -630,6 +724,12 @@ export function startAuthoritativeMatch(
     p.revealedRemaining = 0;
     p.sprintRemaining = 0;
     p.sprintCooldownRemaining = 0;
+    p.stunKind = null;
+    p.heldPower = null;
+    p.heldCharges = 0;
+    p.cloakRemaining = 0;
+    p.shieldRemaining = 0;
+    p.speedBoostRemaining = 0;
     p.interactingWithObjective = false;
     p.eliminationsCount = 0;
     p.inspectionsCount = 0;
@@ -684,6 +784,16 @@ export function startAuthoritativeMatch(
   state.winReason = null;
   state.events = [];
   state.noisePings = [];
+  state.powerUps = [];
+  state.mines = [];
+  state.smokes = [];
+  state.powerSpawnTimer = state.config.powerUpSpawnIntervalSeconds ?? 9;
+  state.rngSeed = (state.rngSeed ?? hashString(`${state.roomCode}:${Date.now()}`)) || 1;
+  if (state.config.powerUpsEnabled !== false) {
+    // A couple of snacks are on the street from the start
+    spawnPowerUp(state, map);
+    spawnPowerUp(state, map);
+  }
   pushMatchEvent(
     state,
     'info',
@@ -846,6 +956,23 @@ export function attemptDirectElimination(
     return { ok: false, reason: 'No visible hider within elimination range.' };
   }
 
+  // 🛡️ Shield: blocks this catch once, bounces the hider away and stuns the seeker
+  if ((bestTarget.shieldRemaining ?? 0) > 0) {
+    bestTarget.shieldRemaining = 0;
+    seeker.stunRemaining = state.config.shieldBlockStunSeconds ?? 1.3;
+    seeker.stunKind = 'shield';
+    const d = Math.max(1, Math.hypot(bestTarget.x - seeker.x, bestTarget.y - seeker.y));
+    const pushX = bestTarget.x + ((bestTarget.x - seeker.x) / d) * 36;
+    const pushY = bestTarget.y + ((bestTarget.y - seeker.y) / d) * 36;
+    if (isPositionWallFree(pushX, pushY, 13, map)) {
+      bestTarget.x = pushX;
+      bestTarget.y = pushY;
+    }
+    emitNoisePing(state, 'flush', bestTarget.x, bestTarget.y, 1.2);
+    pushMatchEvent(state, 'power', `🛡️ ${bestTarget.name}'s shield blocked ${seeker.name}!`, nowMs, bestTarget.x, bestTarget.y);
+    return { ok: false, reason: 'Shield blocked the catch!' };
+  }
+
   bestTarget.alive = false;
   bestTarget.interactingWithObjective = false;
   bestTarget.vx = 0;
@@ -909,6 +1036,7 @@ export function attemptInspectHidingSpot(
   seeker.inspectionsCount += 1;
   // Opening an object takes time: the seeker is rooted while searching.
   seeker.stunRemaining = state.config.inspectRecoverySeconds ?? 0.9;
+  seeker.stunKind = 'search';
 
   const occupantId = state.hidingOccupancy[spot.id];
   if (occupantId && state.players[occupantId] && state.players[occupantId].alive) {
@@ -917,6 +1045,8 @@ export function attemptInspectHidingSpot(
     const hider = state.players[occupantId];
     attemptExitHidingSpot(state, hider.id, { emitNoise: false });
     hider.stunRemaining = state.config.flushStunSeconds ?? 0.6;
+    hider.stunKind = 'flush';
+    hider.cloakRemaining = 0;
     hider.revealedRemaining = state.config.flushRevealSeconds ?? 3;
     hider.revealedById = seeker.id;
     emitNoisePing(state, 'flush', hider.x, hider.y, 1.8);
@@ -1093,6 +1223,16 @@ export function stepAuthoritativeMatch(
     if (player.stunRemaining && player.stunRemaining > 0) {
       player.stunRemaining = Math.max(0, player.stunRemaining - clampedDt);
     }
+    if (player.stunRemaining !== undefined && player.stunRemaining <= 0) player.stunKind = null;
+    if (player.cloakRemaining && player.cloakRemaining > 0) {
+      player.cloakRemaining = Math.max(0, player.cloakRemaining - clampedDt);
+    }
+    if (player.shieldRemaining && player.shieldRemaining > 0) {
+      player.shieldRemaining = Math.max(0, player.shieldRemaining - clampedDt);
+    }
+    if (player.speedBoostRemaining && player.speedBoostRemaining > 0) {
+      player.speedBoostRemaining = Math.max(0, player.speedBoostRemaining - clampedDt);
+    }
     if (player.sprintRemaining && player.sprintRemaining > 0) {
       player.sprintRemaining = Math.max(0, player.sprintRemaining - clampedDt);
     }
@@ -1135,6 +1275,8 @@ export function stepAuthoritativeMatch(
       }
     }
   }
+
+  stepPowerUps(state, clampedDt, nowMs, map);
 
   // Validate objective interaction for all living hiders (per beacon)
   const objectives = getMapObjectives(map);
@@ -1243,7 +1385,17 @@ export function canPerceive(
   const vision = viewer.role === 'seeker' ? cfg.seekerVisionRadius ?? 300 : cfg.hiderVisionRadius ?? 340;
   const hearing = viewer.role === 'seeker' ? cfg.seekerHearingRadius ?? 130 : cfg.hiderHearingRadius ?? 240;
   const dist = Math.hypot(viewer.x - target.x, viewer.y - target.y);
-  if (dist <= vision && hasLineOfSight(viewer.x, viewer.y, target.x, target.y, map.walls)) {
+
+  // 👻 Cloaked hiders are invisible and silent unless the seeker is right on top of them
+  if (target.role === 'hider' && (target.cloakRemaining ?? 0) > 0) {
+    return dist <= (cfg.cloakRevealRadius ?? 55) && hasLineOfSight(viewer.x, viewer.y, target.x, target.y, map.walls);
+  }
+
+  // 💨 Smoke blocks seekers' sight (not their hearing)
+  const smokeBlocked =
+    viewer.role === 'seeker' && isSightBlockedBySmoke(state, viewer.x, viewer.y, target.x, target.y);
+
+  if (!smokeBlocked && dist <= vision && hasLineOfSight(viewer.x, viewer.y, target.x, target.y, map.walls)) {
     return true;
   }
   const moving = Math.hypot(target.vx, target.vy) > 1;
@@ -1293,7 +1445,10 @@ export function filterStateForViewer(state: MatchState, viewerId: string): Match
     for (const spotId of Object.keys(state.hidingOccupancy)) hidingOccupancy[spotId] = null;
   }
 
-  return { ...state, players, hidingOccupancy };
+  // Mines are secret hider traps
+  const mines = viewer.role === 'seeker' ? [] : state.mines;
+
+  return { ...state, players, hidingOccupancy, mines };
 }
 
 /**
@@ -1454,3 +1609,176 @@ export function getAvailableContextualActions(
   return actions;
 }
 
+
+// ───────────────────────────── Edible power-ups ─────────────────────────────
+
+export function hashString(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Deterministic RNG stored in the match state (mulberry32) so spawns are reproducible in tests/sims. */
+export function nextRandom(state: MatchState): number {
+  let t = ((state.rngSeed ?? 1) + 0x6d2b79f5) >>> 0;
+  state.rngSeed = t;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+let pickupSeq = 0;
+
+/** Drop one random snack on an open street tile away from the seeker precinct and other snacks. */
+export function spawnPowerUp(state: MatchState, map: MapConfig = MAPS[state.config.mapId]): PowerPickup | null {
+  const list = (state.powerUps ??= []);
+  if (list.length >= (state.config.powerUpMaxOnMap ?? 4)) return null;
+  const zone = map.seekerSpawnZone;
+  const zoneX = zone.x + zone.width / 2;
+  const zoneY = zone.y + zone.height / 2;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const x = 60 + nextRandom(state) * (map.width - 120);
+    const y = 60 + nextRandom(state) * (map.height - 120);
+    if (!isPositionWallFree(x, y, 20, map)) continue;
+    if (Math.hypot(x - zoneX, y - zoneY) < 300) continue;
+    if (list.some((p) => Math.hypot(p.x - x, p.y - y) < 260)) continue;
+    if (map.hidingSpots.some((sp) => Math.hypot(sp.x + sp.width / 2 - x, sp.y + sp.height / 2 - y) < 50)) continue;
+    const kind = POWER_KINDS[Math.floor(nextRandom(state) * POWER_KINDS.length) % POWER_KINDS.length];
+    pickupSeq = (pickupSeq + 1) % 1_000_000;
+    const pickup: PowerPickup = { id: pickupSeq, kind, x: Math.round(x), y: Math.round(y) };
+    list.push(pickup);
+    return pickup;
+  }
+  return null;
+}
+
+export function isSightBlockedBySmoke(state: MatchState, x1: number, y1: number, x2: number, y2: number): boolean {
+  for (const s of state.smokes ?? []) {
+    const r = s.radius;
+    // point inside the cloud
+    if (Math.hypot(x2 - s.x, y2 - s.y) <= r || Math.hypot(x1 - s.x, y1 - s.y) <= r * 0.5) return true;
+    // segment passes through the cloud
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((s.x - x1) * dx + (s.y - y1) * dy) / len2));
+    if (Math.hypot(x1 + dx * t - s.x, y1 + dy * t - s.y) <= r) return true;
+  }
+  return false;
+}
+
+let mineSeq = 0;
+let smokeSeq = 0;
+
+/** Advance snack spawning, eating, mines and smoke. Called from `stepAuthoritativeMatch`. */
+export function stepPowerUps(state: MatchState, dt: number, nowMs: number, map: MapConfig): void {
+  const cfg = state.config;
+  if (cfg.powerUpsEnabled === false) return;
+
+  // Spawn new snacks over time
+  state.powerSpawnTimer = (state.powerSpawnTimer ?? cfg.powerUpSpawnIntervalSeconds) - dt;
+  if (state.powerSpawnTimer <= 0) {
+    state.powerSpawnTimer = cfg.powerUpSpawnIntervalSeconds ?? 9;
+    spawnPowerUp(state, map);
+  }
+
+  // Hiders eat snacks they walk over (one held power at a time)
+  const pickups = state.powerUps ?? [];
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pu = pickups[i];
+    for (const p of Object.values(state.players)) {
+      if (p.role !== 'hider' || !p.alive || p.hiddenInSpotId || p.heldPower) continue;
+      if (Math.hypot(p.x - pu.x, p.y - pu.y) <= 26) {
+        p.heldPower = pu.kind;
+        p.heldCharges = pu.kind === 'mines' ? cfg.minesPerPickup ?? 2 : 1;
+        pickups.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // Mines: arm, expire, and trigger on seekers
+  const mines = (state.mines ??= []);
+  for (let i = mines.length - 1; i >= 0; i--) {
+    const m = mines[i];
+    m.ttl -= dt;
+    m.armDelay = Math.max(0, m.armDelay - dt);
+    if (m.ttl <= 0) {
+      mines.splice(i, 1);
+      continue;
+    }
+    if (m.armDelay > 0) continue;
+    for (const s of Object.values(state.players)) {
+      if (s.role !== 'seeker' || !s.alive) continue;
+      if (Math.hypot(s.x - m.x, s.y - m.y) <= (cfg.mineTriggerRadius ?? 30)) {
+        s.stunRemaining = Math.max(s.stunRemaining ?? 0, cfg.mineStunSeconds ?? 2.5);
+        s.stunKind = 'mine';
+        s.vx = 0;
+        s.vy = 0;
+        mines.splice(i, 1);
+        emitNoisePing(state, 'flush', m.x, m.y, 1.5);
+        pushMatchEvent(state, 'power', `💣 ${s.name} stepped on a mine!`, nowMs, m.x, m.y);
+        break;
+      }
+    }
+  }
+
+  // Smoke clouds fade
+  const smokes = (state.smokes ??= []);
+  for (let i = smokes.length - 1; i >= 0; i--) {
+    smokes[i].ttl -= dt;
+    if (smokes[i].ttl <= 0) smokes.splice(i, 1);
+  }
+}
+
+/** Activate the eaten snack. Server-validated; the client only sends the intent. */
+export function attemptUsePower(
+  state: MatchState,
+  playerId: string,
+  _nowMs: number = Date.now()
+): { ok: boolean; kind?: PowerKind; reason?: string } {
+  const p = state.players[playerId];
+  if (!p || p.role !== 'hider' || !p.alive) return { ok: false, reason: 'Only living hiders can use powers.' };
+  if (state.lifecycle !== 'HIDER_HEAD_START' && state.lifecycle !== 'SEEKER_RELEASED' && state.lifecycle !== 'MATCH_ACTIVE') {
+    return { ok: false, reason: 'Match is not active.' };
+  }
+  const kind = p.heldPower;
+  if (!kind) return { ok: false, reason: 'No power to use — eat a snack first!' };
+  if (p.hiddenInSpotId) return { ok: false, reason: 'Leave your hiding spot first.' };
+  if ((p.stunRemaining ?? 0) > 0) return { ok: false, reason: 'Stunned.' };
+  const cfg = state.config;
+
+  switch (kind) {
+    case 'cloak':
+      p.cloakRemaining = cfg.cloakSeconds ?? 8;
+      p.revealedRemaining = 0;
+      break;
+    case 'shield':
+      p.shieldRemaining = cfg.shieldSeconds ?? 12;
+      break;
+    case 'speed':
+      p.speedBoostRemaining = cfg.speedBoostSeconds ?? 10;
+      break;
+    case 'smoke': {
+      smokeSeq = (smokeSeq + 1) % 1_000_000;
+      const ttl = cfg.smokeSeconds ?? 7;
+      (state.smokes ??= []).push({ id: smokeSeq, x: p.x, y: p.y, radius: cfg.smokeRadius ?? 130, ttl, maxTtl: ttl });
+      break;
+    }
+    case 'mines': {
+      mineSeq = (mineSeq + 1) % 1_000_000;
+      (state.mines ??= []).push({ id: mineSeq, ownerId: p.id, x: p.x, y: p.y + 6, ttl: cfg.mineSeconds ?? 15, armDelay: 0.6 });
+      break;
+    }
+  }
+
+  p.heldCharges = Math.max(0, (p.heldCharges ?? 1) - 1);
+  if (p.heldCharges <= 0) {
+    p.heldPower = null;
+    p.heldCharges = 0;
+  }
+  return { ok: true, kind };
+}

@@ -1600,6 +1600,17 @@ export function drawCityMinimap(
     ctx.fillRect(ox - 2, oy - 2, 4, 4);
   }
 
+  // 5b. Edible power-up snacks (small blinking pips)
+  if (viewerRole === 'hider') {
+    for (const pu of state.powerUps ?? []) {
+      if (Math.floor(timeSec * 3 + pu.id) % 2 !== 0) continue;
+      const px = Math.round(pu.x * scaleX);
+      const py = Math.round(pu.y * scaleY);
+      ctx.fillStyle = '#C4B5FD';
+      ctx.fillRect(px - 1, py - 1, 3, 3);
+    }
+  }
+
   // 6. Teammate Hiders (visible to Hiders) & Seeker during head start
   for (const p of Object.values(state.players)) {
     if (!p.alive || p.masked || p.id === localPlayer?.id) continue;

@@ -332,6 +332,20 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
           </div>
 
           <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
+            <h3 className="font-display font-bold text-violet-300 text-base">
+              ★ HIDER SNACK POWERS (walk over to eat · <span className="font-mono">Q</span> / tap to use)
+            </h3>
+            <ul className="mt-1 text-xs sm:text-sm text-slate-300 space-y-0.5">
+              <li>👻 <strong>Ghost Candy</strong> — Invisibility Cloak: seekers can’t see or hear you for 8s (unless they bump into you).</li>
+              <li>🛡️ <strong>Iron Apple</strong> — Shield for 12s: blocks one catch and stuns the seeker.</li>
+              <li>💣 <strong>Pop Rocks</strong> — 2 hidden mines (15s each) that stun a seeker for 2.5s.</li>
+              <li>💨 <strong>Smoke Pie</strong> — 7s smoke cloud that seekers can’t see through.</li>
+              <li>🍩 <strong>Energy Donut</strong> — +25% speed for 10s.</li>
+            </ul>
+            <p className="mt-1 text-[11px] text-slate-400">You can carry one snack at a time. New snacks appear around the city every few seconds.</p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
             <h3 className="font-display font-bold text-red-400 text-base">
               3. SEEKER TEAM RULES (120% Speed · Limited Vision · Search &amp; Catch)
             </h3>

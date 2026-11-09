@@ -1,6 +1,8 @@
 # Project State — CITY HIDEOUT
 
 ## 1. Current Milestone
+**v2.1.0**: edible hider powers (cloak, shield, mines, smoke, speed). 26/26 tests.
+
 **v2.0.1**: compact HUD for short (landscape phone) screens via the `short` Tailwind variant.
 
 **Milestone 10 (Complete, v2.0.0)**: Gameplay & visual overhaul — seeker search/flush, anti spot-chaining, hider sprint, two escape beacons with a signal-tower construction animation, fog of war + perception, server-side anti-cheat filtering, A* bots, headless balance simulation, online interpolation. See `docs/IMPROVEMENT_PLAN.md` and `docs/CHANGELOG.md`.

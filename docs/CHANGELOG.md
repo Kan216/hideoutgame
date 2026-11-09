@@ -1,5 +1,15 @@
 # Changelog — CITY HIDEOUT
 
+## [2.1.0] — 2026-11-09
+### Added — edible hider powers
+- Snacks spawn around the city (max 4, every 9s); hiders eat one by walking over it and activate it with `Q` or the mobile power button.
+- 👻 Ghost Candy → Invisibility Cloak (8s), 🛡️ Iron Apple → Shield (12s, blocks one catch + stuns seeker), 💣 Pop Rocks → 2 hidden Mines (15s, stun 2.5s), 💨 Smoke Bomb (7s, blocks seeker sight), 🍩 Energy Donut → Speed Boost (10s, +25%).
+- Server-authoritative (`use_power` action); mines are filtered out of seeker state; cloak/smoke integrated into `canPerceive`.
+- Visuals: glowing snack plates, mine blinkers with trigger ring (hiders only), billowing smoke, shield bubble, translucent cloak, "BOOM! STUNNED"/"BLOCKED!" labels, explosion/shield FX, minimap snack pips, HUD power chips + mobile power button, How-to-Play section.
+- Bots eat nearby snacks and use them when a seeker closes in.
+- Balance (bot-only 1v4, 30/map): seeker win rate 75% → **62%** (Downtown 67, Harbor 50, Modern 67, Mystic 63), avg match ≈ 134s.
+- Desktop callout dock made compact; dev-only `window.__CH_DEBUG__` test hook (not in production builds).
+
 ## [2.0.1] — 2026-11-09
 ### Fixed — mobile landscape HUD covering the game
 - Phones in landscape are wide (≥640px → `sm:` desktop sizes) but short (~360–430px), so they got the full desktop HUD. Added a Tailwind `short` variant (`@media (max-height: 520px)`, `src/index.css`) and compact `short:*!` overrides for the top clusters, minimap (100×70, no legend/coords), toasts and mobile controls.

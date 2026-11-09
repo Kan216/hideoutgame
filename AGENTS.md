@@ -10,6 +10,7 @@
 - **Seeker Elimination**: No shooting system. Seekers eliminate hiders via close-range direct catch in the open (`58px`, exact line-of-sight check).
 - **Vision & Fog of War**: Perception is shared by renderer, bots and server (`canPerceive` in `rules.ts`): enemies are seen inside the vision radius with line of sight (seeker `250px`, hider `340px`) or heard when MOVING inside the hearing radius (seeker `110px`, hider `240px`). Teammates always see each other. The server sends each client only `filterStateForViewer(state, playerId)` — never leak occupancy or unseen positions.
 - **Hider Sprint**: `Shift` / mobile ⚡ button — `1.45×` speed for `2.2s`, `8s` cooldown.
+- **Edible Hider Powers (snacks)**: Snacks spawn on open streets (max `4`, one every `9s`, deterministic `state.rngSeed`, ≥300px from the seeker precinct). A hider eats one by walking over it (one held power; mines come with 2 charges) and activates it with `Q` / mobile power button (`use_power` action, server-validated, not while hidden or stunned): 👻 Ghost Candy → **Invisibility Cloak 8s** (seekers perceive only within `55px`); 🛡️ Iron Apple → **Shield 12s** (blocks one catch, pushes hider away, seeker stunned `1.3s`); 💣 Pop Rocks → **2 Mines** (`15s`, arm after `0.6s`, `30px` trigger, seeker stunned `2.5s`, never sent to seekers); 💨 Smoke Pie → **Smoke Bomb 7s** (`130px`, blocks seeker sight, not hearing); 🍩 Energy Donut → **Speed Boost 10s** (`1.25×`, max with sprint). Seekers cannot eat snacks. Logic in `rules.ts` (`stepPowerUps`, `attemptUsePower`, `POWER_INFO`), visuals in `worldFx.ts`.
 - **Hider Escape Objective**: TWO escape beacons per map (central beacon + far-corner relay, `getMapObjectives(map)`). **3 global stages of 15 uninterrupted seconds** at any one beacon (`45s` total). Interruption resets only that beacon's active stage. Beacons are quiet for 6s then emit a `beacon` noise ping every 3s. On timeout, hiders win only if `≥ timeoutHiderMinStages (1)` stage was completed; otherwise seekers win.
 - **Bots**: `src/game/bots.ts` (A* navigation in `src/game/navigation.ts`). Bots obey the same perception rules as players — never read hidden state. Measure balance with `npm run simulate` (target ~50–70% seeker wins for 1v4 bot-only).
 
@@ -23,7 +24,7 @@
 
 ## 3. Architecture & Networking Rules
 - **Decoupled Pure Logic**: All movement physics, collision checks, line-of-sight rays, hiding occupancy, inspections, eliminations, perception and objective timers live in `/src/game/rules.ts` and `/src/game/maps.ts`; bots in `/src/game/bots.ts` + `/src/game/navigation.ts`. Rules accept an injected `nowMs`. Client-only visuals (fog, beacon construction animation, noise rings, status FX) live in `/src/game/worldFx.ts`.
-- **Server Authority**: `/server.ts` runs the authoritative 25Hz tick loop (`stepAuthoritativeMatch`) and validates all client actions (`move_input`, `hide`, `exit_hide`, `inspect`, `eliminate`, `hold_objective`, `sprint`). Never allow clients to claim arbitrary eliminations or instant objective completions.
+- **Server Authority**: `/server.ts` runs the authoritative 25Hz tick loop (`stepAuthoritativeMatch`) and validates all client actions (`move_input`, `hide`, `exit_hide`, `inspect`, `eliminate`, `hold_objective`, `sprint`, `use_power`). Never allow clients to claim arbitrary eliminations or instant objective completions.
 - **Guest Play & Identity**: Prominent **Play as Guest** flow requiring zero email, password, or third-party login. Guest display names are validated against reserved system identities (`admin`, `system`, `server`, `moderator`, etc.). Server issues cryptographic guest session tokens (`ch_guest_token`).
 
 ## 4. Mobile Controls & UX Rules
@@ -33,7 +34,7 @@
 
 ## 5. Testing & How to Resume Work
 1. Read `/AGENTS.md` and `/docs/PROJECT_STATE.md`.
-2. Run unit tests first: `node --test src/game/rules.test.ts` (20 tests). For balance changes also run `npm run simulate`.
+2. Run unit tests first: `node --test src/game/rules.test.ts` (26 tests). For balance changes also run `npm run simulate`.
 3. Verify compilation: `npm run lint` and `npm run build`.
 4. Verify live browser & two-client multiplayer behavior via `playwright-cli`.
 5. Update `/docs/PROJECT_STATE.md`, `/docs/TESTING.md`, and `/docs/CHANGELOG.md` after every task.

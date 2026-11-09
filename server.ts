@@ -19,6 +19,7 @@ import {
   setObjectiveInteraction,
   stepAuthoritativeMatch,
   attemptSprint,
+  attemptUsePower,
   filterStateForViewer,
 } from './src/game/rules.ts';
 import { MAPS } from './src/game/maps.ts';
@@ -439,6 +440,9 @@ async function startServer() {
           state.objectiveProgressById = {};
           state.objectiveActiveIds = [];
           state.noisePings = [];
+          state.powerUps = [];
+          state.mines = [];
+          state.smokes = [];
           broadcastRoomState(room);
           return;
         }
@@ -471,6 +475,8 @@ async function startServer() {
             setObjectiveInteraction(state, boundSession.playerId, Boolean(msg.active));
           } else if (action === 'sprint') {
             attemptSprint(state, boundSession.playerId);
+          } else if (action === 'use_power') {
+            attemptUsePower(state, boundSession.playerId, Date.now());
           }
           broadcastRoomState(room);
         }

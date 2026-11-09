@@ -20,6 +20,11 @@ Executed via Node's native test runner (`node --test src/game/rules.test.ts`):
 ### Balance simulation
 `npm run simulate [matchesPerMap] [seekerCount]` — headless bot-vs-bot. Latest (30/map, 1v4): Downtown 87%, Harbor 63%, Modern 83%, Mystic 67% seeker wins (≈75% overall, ≈100s matches). 2v5 bot-only is still 100% seeker — see IMPROVEMENT_PLAN follow-ups.
 
+### v2.1.0 power-ups (Tests 21–26)
+- Snack spawning (capped, wall-free) & eating (hiders only), cloak perception + expiry, shield block + seeker stun, mines (2 charges, arming delay, hidden from seekers, stun), smoke blocks sight + fades, speed boost & empty-slot / seeker rejection.
+- Playwright desktop 1280×720 + phone 853×393: eat a snack → HUD chip / mobile power button; `Q` / tap activates shield; 0 console errors. Render harness screenshot of all snack/power visuals.
+- WebSocket: snacks present in both clients' state; empty `use_power` safely rejected.
+
 ### v2.0.1 mobile landscape HUD check
 - Playwright Android landscape 853×393 (touch, DPR 2): seeker after release, callout bar open, hider during head start — HUD occupies only the top strip + corners; desktop 1280×720 unchanged; 0 console errors.
 

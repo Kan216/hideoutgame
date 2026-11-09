@@ -60,6 +60,7 @@ for (const mapId of Object.keys(MAPS) as MapId[]) {
       // Jitter spawns slightly per match so runs differ deterministically.
       state.players[`b${i}`] = makeBot(`b${i}`, i + m, spawn.x + ((m * 7 + i * 13) % 9) - 4, spawn.y);
     }
+    state.rngSeed = 1000 + m; // deterministic snack spawns per run
     // Rotate who becomes seeker so policies vary.
     state.hostId = `b${m % (seekerCount + hiderCount)}`;
     startAuthoritativeMatch(state, 'seeker');

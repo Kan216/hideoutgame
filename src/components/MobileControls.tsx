@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ContextualActionPrompt } from '../game/rules';
+import { ContextualActionPrompt, POWER_INFO, PowerKind } from '../game/rules';
 
 interface MobileControlsProps {
   visible: boolean;
@@ -16,6 +16,11 @@ interface MobileControlsProps {
   sprintCooldown?: number;
   sprinting?: boolean;
   onSprint?: () => void;
+  /** Eaten snack power */
+  heldPower?: PowerKind | null;
+  heldCharges?: number;
+  activePowerLabel?: string | null;
+  onUsePower?: () => void;
 }
 
 const QUICK_EMOTES = ['👋 Hey!', '👀 Spotted!', '🏃 Run!', '🆘 Help!', '🏆 GG', '🤫 Shh!'];
@@ -34,6 +39,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   sprintCooldown = 0,
   sprinting = false,
   onSprint,
+  heldPower = null,
+  heldCharges = 0,
+  activePowerLabel = null,
+  onUsePower,
 }) => {
   const baseRef = useRef<HTMLDivElement | null>(null);
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -167,6 +176,35 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
             <span>💬</span>
             <span className="text-[10px] sm:text-[11px] font-sans short:hidden">Callout</span>
           </button>
+        )}
+
+        {(heldPower || activePowerLabel) && (
+          <div className="flex items-center gap-1.5">
+            {activePowerLabel && (
+              <span className="px-2 py-1 rounded-lg bg-[#090D16]/90 border border-violet-400/60 text-[11px] font-mono font-bold text-violet-100 shadow">
+                {activePowerLabel}
+              </span>
+            )}
+            {heldPower && (
+              <button
+                type="button"
+                aria-label={`Use ${POWER_INFO[heldPower].power}`}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  onUsePower?.();
+                }}
+                className="relative w-[58px] h-[58px] sm:w-[64px] sm:h-[64px] short:w-[50px]! short:h-[50px]! rounded-2xl border-2 shadow-xl flex flex-col items-center justify-center active:scale-95 transition-transform bg-violet-700/95 border-violet-200 text-white animate-pulse"
+              >
+                <span className="text-2xl short:text-xl leading-none">{POWER_INFO[heldPower].icon}</span>
+                <span className="text-[9px] font-display font-bold leading-tight short:hidden">USE</span>
+                {heldCharges > 1 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold flex items-center justify-center border border-slate-900">
+                    {heldCharges}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
         )}
 
         {showSprint && (
